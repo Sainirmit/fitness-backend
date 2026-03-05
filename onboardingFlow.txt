@@ -1,0 +1,255 @@
+MyTrainr AI – Onboarding Flow
+Full User Flow
+→ Splash
+→ Welcome
+→ Name
+→ Fitness Goals
+→ Fitness Level
+→ Motivation
+→ Hook Screen (UI only — no backend impact)
+→ Sign Up
+→ Current Body Details
+→ Gym / Home
+→ Workout Frequency
+→ Workout Focus
+→ Dietary Preferences
+→ Plan Generation
+→ Paywall / Unlock Plan
+Screen Documentation
+1. Splash Screen
+2. Welcome Screen
+Purpose
+Introduce the product and move users into onboarding.
+UI Elements
+Headline
+The only personalized fitness plan that actually fits your life.
+Social proof
+Rated 4.7 by 2,000+ users
+Content area
+Rotating transformations, testimonials, or community posts.
+Primary CTA
+Build My Plan Now
+Behavior
+CTA navigates the user to the Name Input screen.
+3. Name Input
+Purpose
+Capture the user's name for personalization throughout onboarding.
+Question
+What’s your name?
+Input
+Text field
+Placeholder
+Your name
+CTA
+Set up my plan →
+Data Captured
+name: string
+Used in dynamic UI copy during onboarding.
+4. Primary Fitness Goal
+Question
+What’s your primary fitness goal?
+Selection Type
+Multi-select
+Options
+Lose weight
+Build muscle
+Burn fat
+Improve endurance
+Maintain fitness
+Get leaner & toned
+Flexibility
+Mental strength
+Manage stress
+Validation
+At least one option must be selected.
+Data Format
+fitness_goals: string[]
+5. Current Fitness Level
+Question
+Describe your current fitness level.
+Selection Type
+Single select.
+Options
+Beginner
+Intermediate
+Advanced
+Data Format
+fitness_level: string
+
+6. Motivation
+Question
+What’s your motivation to exercise?
+Selection Type
+Multi-select.
+Options
+Health & Well-Being
+Regaining Confidence
+Become more Sexually Appealing
+Stress Relief & Enjoyment
+Improve Social Life
+Data Format
+motivations: string[]
+7. Hook Screen
+Purpose
+Motivational UI screen designed to reinforce personalization before authentication.
+Behavior
+Displays motivational message using the user's name.
+No data collected.
+No backend impact.
+CTA → Continue to Sign Up.
+
+
+
+8. Sign Up (Save Progress)
+Purpose
+Create user account and persist onboarding progress.
+Message
+Let’s save your progress.
+You’re 2 minutes away from your personal plan.
+Displayed Summary
+Name
+Fitness Level
+Goals
+Motivation
+Authentication Methods
+Continue with Google
+Sign in with Apple
+Data Created
+user_id: string
+email: string
+provider: string
+9. Current Body Details
+Purpose
+Collect user biometrics required for calorie calculation and training personalization.
+Inputs
+Gender
+Male / Female / Other
+Age
+Numeric stepper
+Weight
+Numeric input
+Units toggle
+kg / lbs
+Height
+Numeric input
+Units toggle
+cm / ft-in
+Data Format
+gender: string
+age: number
+weight: number
+weight_unit: string
+height: number
+height_unit: string
+Important note: save weight in kgs and height in cms do internal conversion at the backend. Save the units the user used so we can use it later to display contents for user in preferred units.
+10. Workout Environment
+Question
+Do you have access to a gym or prefer home workouts?
+Options
+Gym Workouts
+Home Workouts
+If Gym Selected
+Additional question:
+Do you have experience with weightlifting?
+Options
+Yes
+No
+
+
+Data
+workout_environment: "gym"
+weightlifting_experience: boolean
+
+If Home Selected
+Additional input:
+What equipment do you have at home?
+Input type: free text.
+Example input
+dumbbells, resistance bands, pull-up bar
+Backend should normalize this into an array.
+Data
+workout_environment: "home"
+home_equipment: string[]
+11. Workout Frequency
+Question
+How often would you like to work out?
+Inputs
+Workout days
+Selectable days of the week:
+Sun
+Mon
+Tue
+Wed
+Thu
+Fri
+Sat
+Preferred workout time
+Morning
+Afternoon
+Evening
+Night
+Activity level (apart from workouts)
+None
+Light
+Moderate
+Very Active
+Data Format
+workout_days: string[]
+preferred_workout_time: string
+activity_level: string
+12. Workout Focus
+Question
+You would like to focus on:
+Selection Type
+Multi-select.
+Options
+Back
+Arms
+Shoulders
+Chest
+Core & Abs
+Lower Body
+Upper Body
+Glutes
+Full Body
+UI
+Front and back muscle diagram highlighting selected areas.
+Data Format
+focus_areas: string[]
+13. Dietary Preferences
+Question
+Do you follow a specific diet?
+Options
+Non-Vegetarian
+Vegetarian (with eggs)
+Vegetarian (without eggs)
+Vegan
+Second question
+How many meals per day?
+Options
+2 Meals
+3 Meals
+4 Meals
+5+ Meals
+Data Format
+diet_type: string
+meals_per_day: number
+14. Paywall
+CTA
+Unlock My Plan (teaser image - no real plan generated yet)
+Triggers subscription paywall.
+Backend Data Model Recommendation
+Avoid strict ENUM types.
+Store normalized strings instead.
+Example
+fitness_goals: string[]
+motivations: string[]
+focus_areas: string[]
+Advantages
+Frontend labels can change without backend updates
+Easier to add new options
+Supports A/B testing
+Reduces API breaking changes
+Normalization Example
+Frontend label = Build Muscle
+Stored value = build_muscle
