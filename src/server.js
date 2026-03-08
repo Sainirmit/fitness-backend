@@ -40,7 +40,29 @@ app.use("/api/body-photos", bodyPhotosRoutes);
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ message: "Something went wrong!" });
+
+  // Mongoose validation error (e.g. field out of range)
+  if (err.name === "ValidationError") {
+    const messages = Object.values(err.errors).map((e) => e.message);
+    return res.status(400).json({ message: messages.join(", ") });
+  }
+
+  // Mongoose CastError (e.g. invalid ObjectId)
+  if (err.name === "CastError") {
+    return res
+      .status(400)
+      .json({ message: `Invalid value for field: ${err.path}` });
+  }
+
+  // MongoDB duplicate key
+  if (err.code === 11000) {
+    const field = Object.keys(err.keyValue ?? {})[0] ?? "field";
+    return res.status(409).json({ message: `${field} is already in use.` });
+  }
+
+  res
+    .status(err.status || 500)
+    .json({ message: err.message || "Something went wrong!" });
 });
 
 // 404 handler
