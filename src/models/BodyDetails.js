@@ -34,7 +34,7 @@ const bodyDetailsSchema = new mongoose.Schema(
     weightUnit: {
       type: String,
       trim: true,
-      default: 'kg',
+      default: '',
       // "kg" | "lbs" – for display only
     },
     height: {
