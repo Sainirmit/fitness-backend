@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Apple Sign-In Mock Test</title>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        button { margin: 10px; padding: 10px 20px; font-size: 16px; }
+        #result { margin-top: 20px; padding: 10px; background: #f5f5f5; }
+        .success { background: #d4edda; }
+        .error { background: #f8d7da; }
+    </style>
+</head>
+<body>
+    <h1>Apple Sign-In Mock Test</h1>
+    
+    <button onclick="getRealToken()">🔑 Get Real Token (Google)</button>
+    <button onclick="testAppleMock()">🍎 Test Apple Backend (Mock)</button>
+    <button onclick="testAppleReal()">🍎 Test Real Apple Sign-In</button>
+    
+    <div id="result"></div>
+
+    <script>
+        // const firebaseConfig = {
+        //     apiKey: "AIzaSyD15R0k6UG1Np0BmbLOHimy9bg2GmlVHSc",
+        //     authDomain: "my-trainr-ai.firebaseapp.com",
+        //     projectId: "my-trainr-ai",
+        //     storageBucket: "my-trainr-ai.firebasestorage.app",
+        //     messagingSenderId: "769847498503",
+        //     appId: "1:769847498503:web:6dd8f4b8cac79385d0d7a2"
+        // };
+        
+        firebase.initializeApp(firebaseConfig);
+
+        // We'll use a real Google token to test Apple backend logic (since backend just needs a valid Firebase token)
+        let realToken = null;
+
+        async function testAppleMock() {
+            try {
+                if (!realToken) {
+                    showResult('❌ Please get a real token first using the main test.html Google sign-in', 'error');
+                    return;
+                }
+                
+                showResult('Testing Apple backend with real Firebase token...', 'info');
+                
+                // Use real Firebase token but simulate Apple user data
+                const response = await fetch('http://localhost:3000/api/auth/apple', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        idToken: realToken,
+                        user: {
+                            name: {
+                                firstName: "Apple",
+                                lastName: "Test User"
+                            }
+                        }
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult(`✅ Apple backend logic works! User: ${data.user.email}, New User: ${data.isNewUser}`, 'success');
+                } else {
+                    showResult(`❌ Error: ${data.message}`, 'error');
+                }
+                
+            } catch (error) {
+                showResult(`❌ Error: ${error.message}`, 'error');
+                console.error('Full error:', error);
+            }
+        }
+
+        async function getRealToken() {
+            try {
+                showResult('Getting real Firebase token via Google sign-in...', 'info');
+                
+                const provider = new firebase.auth.GoogleAuthProvider();
+                const result = await firebase.auth().signInWithPopup(provider);
+                realToken = await result.user.getIdToken();
+                
+                showResult(`✅ Got real token! Now you can test Apple mock.`, 'success');
+            } catch (error) {
+                showResult(`❌ Error getting token: ${error.message}`, 'error');
+            }
+        }
+
+        async function testAppleReal() {
+            try {
+                showResult('Opening real Apple sign-in popup...', 'info');
+                
+                const provider = new firebase.auth.OAuthProvider('apple.com');
+                const result = await firebase.auth().signInWithPopup(provider);
+                
+                showResult('Got Apple user, getting ID token...', 'info');
+                const idToken = await result.user.getIdToken();
+                
+                showResult('Sending ID token to backend...', 'info');
+                const response = await fetch('http://localhost:3000/api/auth/apple', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        idToken,
+                        user: result.user.providerData[0] || {}
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult(`✅ Real Apple sign-in works! User: ${data.user.email}, New User: ${data.isNewUser}`, 'success');
+                } else {
+                    showResult(`❌ Error: ${data.message}`, 'error');
+                }
+                
+            } catch (error) {
+                showResult(`❌ Error: ${error.message}`, 'error');
+                console.error('Full error:', error);
+            }
+        }
+
+        function showResult(message, type) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `<div class="${type}">${message}</div>`;
+            console.log(message);
+        }
+    </script>
+</body>
+</html>
