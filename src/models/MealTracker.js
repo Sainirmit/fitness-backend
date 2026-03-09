@@ -38,7 +38,13 @@ const mealTrackerSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: '',
-      // Optional user description of the meal
+      // Optional user description of the meal for ai 
+    },
+    macroFixRequest: {
+      type: String,
+      trim: true,
+      default: '',
+      // User text request for AI to adjust macros (e.g. "add more protein", "reduce carbs")
     },
     
     // --- AI-generated nutritional data ---
@@ -67,24 +73,68 @@ const mealTrackerSchema = new mongoose.Schema(
       // Fats in grams
     },
     
+    // --- AI-adjusted nutritional data (after macro fix) ---
+    adjustedCalories: {
+      type: Number,
+      min: 0,
+      default: null,
+      // AI-adjusted calories after macro fix request
+    },
+    adjustedProtein: {
+      type: Number,
+      min: 0,
+      default: null,
+      // AI-adjusted protein in grams after macro fix request
+    },
+    adjustedCarbs: {
+      type: Number,
+      min: 0,
+      default: null,
+      // AI-adjusted carbs in grams after macro fix request
+    },
+    adjustedFats: {
+      type: Number,
+      min: 0,
+      default: null,
+      // AI-adjusted fats in grams after macro fix request
+    },
+    
     // --- AI processing metadata ---
     aiProcessed: {
       type: Boolean,
       default: false,
-      // True when OpenAI has analyzed the meal
+      // True when OpenAI has analyzed the meal initially
+    },
+    macroFixProcessed: {
+      type: Boolean,
+      default: false,
+      // True when OpenAI has processed macro fix request
     },
     aiConfidence: {
       type: Number,
       min: 0,
       max: 1,
       default: null,
-      // AI confidence score for nutritional analysis
+      // AI confidence score for initial nutritional analysis
+    },
+    macroFixConfidence: {
+      type: Number,
+      min: 0,
+      max: 1,
+      default: null,
+      // AI confidence score for macro fix adjustments
     },
     aiError: {
       type: String,
       trim: true,
       default: '',
-      // Any error message from AI processing
+      // Any error message from initial AI processing
+    },
+    macroFixError: {
+      type: String,
+      trim: true,
+      default: '',
+      // Any error message from macro fix AI processing
     },
     
     // --- Timing ---
@@ -111,5 +161,6 @@ mealTrackerSchema.index({ user: 1, mealDateTime: -1 });
 mealTrackerSchema.index({ user: 1, mealType: 1 });
 mealTrackerSchema.index({ user: 1, recordedAt: -1 });
 mealTrackerSchema.index({ aiProcessed: 1 }); // For finding unprocessed meals
+mealTrackerSchema.index({ macroFixProcessed: 1 }); // For finding meals needing macro fix
 
 export default mongoose.model('MealTracker', mealTrackerSchema);
