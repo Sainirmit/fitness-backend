@@ -120,6 +120,12 @@ const userSchema = new mongoose.Schema(
       default: false,
       // Set after successful paywall / subscription
     },
+    currentWorkoutPlan: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WorkoutPlan',
+      default: null,
+      // Optional: Quick reference to user's active workout plan
+    },
   },
   {
     timestamps: true,
