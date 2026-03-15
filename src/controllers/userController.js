@@ -3,7 +3,7 @@ import BodyDetails from '../models/BodyDetails.js';
 import {
   normalizeOptionValue,
   normalizeHomeEquipment,
-} from '../../utils/onboardingNormalize.js';
+} from '../utils/onboardingNormalize.js';
 
 // --- Unit conversion helpers ---
 const lbsToKg = (lbs) => Math.round(lbs * 0.453592 * 10) / 10;
