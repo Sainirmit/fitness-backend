@@ -22,7 +22,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Serve static files for testing
-app.use(express.static('public'));
+app.use(express.static("public"));
 
 // Basic route
 app.get("/", (req, res) => {
