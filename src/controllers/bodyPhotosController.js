@@ -1,6 +1,6 @@
 import multer from 'multer';
 import BodyPhotos from '../models/BodyPhotos.js';
-import { uploadToS3, deleteFromS3, generateFileName, extractFileNameFromUrl, getAccessSignedUrl } from '../config/s3.js';
+import { uploadToS3, deleteFromS3, generateFileName, extractFileNameFromUrl, getAccessSignedUrl, getUploadSignedUrl } from '../config/s3.js';
 
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
