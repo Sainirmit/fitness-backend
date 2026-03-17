@@ -2,6 +2,19 @@ import { getFirebaseAdmin } from '../config/firebase.js';
 import { signToken } from '../utils/jwt.js';
 import User from '../models/User.js';
 
+const safeDecodeJwtClaims = (token) => {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = payload.padEnd(payload.length + ((4 - (payload.length % 4)) % 4), '=');
+    const json = Buffer.from(padded, 'base64').toString('utf8');
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+};
+
 /**
  * POST /api/auth/google
  *
@@ -32,7 +45,23 @@ export const googleLogin = async (req, res) => {
     const firebaseAdmin = getFirebaseAdmin();
     decoded = await firebaseAdmin.auth().verifyIdToken(idToken);
   } catch (err) {
-    console.error('[googleLogin] Firebase token verification failed:', err.message);
+    const claims = safeDecodeJwtClaims(idToken);
+    console.error('[googleLogin] Firebase token verification failed:', {
+      message: err?.message,
+      code: err?.code,
+      // Helpful for debugging wrong-project vs expired vs wrong token type.
+      tokenClaims: claims
+        ? {
+            iss: claims.iss,
+            aud: claims.aud,
+            exp: claims.exp,
+            iat: claims.iat,
+            sub: claims.sub,
+            email: claims.email,
+            azp: claims.azp,
+          }
+        : null,
+    });
     return res.status(401).json({ message: 'Google token is invalid or has expired.' });
   }
 
@@ -103,7 +132,22 @@ export const appleLogin = async (req, res) => {
     const firebaseAdmin = getFirebaseAdmin();
     decoded = await firebaseAdmin.auth().verifyIdToken(idToken);
   } catch (err) {
-    console.error('[appleLogin] Firebase token verification failed:', err.message);
+    const claims = safeDecodeJwtClaims(idToken);
+    console.error('[appleLogin] Firebase token verification failed:', {
+      message: err?.message,
+      code: err?.code,
+      tokenClaims: claims
+        ? {
+            iss: claims.iss,
+            aud: claims.aud,
+            exp: claims.exp,
+            iat: claims.iat,
+            sub: claims.sub,
+            email: claims.email,
+            azp: claims.azp,
+          }
+        : null,
+    });
     return res.status(401).json({ message: 'Apple token is invalid or has expired.' });
   }
 
