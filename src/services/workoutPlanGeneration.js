@@ -3,7 +3,7 @@
  *
  * Flow: load context -> catalog from Mongo -> rules from Mongo -> LLM -> validate -> persist.
  *
- * All plans are calendar-shaped: 21 days keyed by YYYY-MM-DD with explicit rest days.
+ * All plans are calendar-shaped: 21–30 days keyed by YYYY-MM-DD with explicit rest days.
  * dailyStepGoal is computed deterministically (no LLM tokens) and stored on the plan doc.
  */
 
@@ -20,7 +20,10 @@ import WorkoutDay from "../models/WorkoutDay.js";
 import WorkoutDayExercise from "../models/WorkoutDayExercise.js";
 import User from "../models/User.js";
 
-const PLAN_DAYS = 21;
+const MIN_PLAN_DAYS = 21;
+const MAX_PLAN_DAYS = 30;
+/** Prompt / docs target; persisted length is clamped to [MIN_PLAN_DAYS, MAX_PLAN_DAYS]. */
+const PLAN_DAYS = MIN_PLAN_DAYS;
 
 // ---------------------------------------------------------------------------
 // Deterministic helpers (no LLM cost)
@@ -438,6 +441,17 @@ function clampVolume(schedule) {
   }
 }
 
+/** Keeps first MAX_PLAN_DAYS entries; 21–30 inclusive is accepted as-is. */
+function normalizeScheduleLength(schedule, logTag) {
+  if (!schedule?.length) return;
+  if (schedule.length <= MAX_PLAN_DAYS) return;
+  const removed = schedule.length - MAX_PLAN_DAYS;
+  schedule.splice(MAX_PLAN_DAYS);
+  console.warn(
+    `[${logTag}] trimmed ${removed} excess day(s) from end; using ${MAX_PLAN_DAYS} days`,
+  );
+}
+
 function validateSchedule(schedule, allowedIds) {
   const idSet = new Set(allowedIds.map(String));
   const errors = [];
@@ -446,8 +460,15 @@ function validateSchedule(schedule, allowedIds) {
     errors.push("Schedule is empty");
     return errors;
   }
-  if (schedule.length !== PLAN_DAYS) {
-    errors.push(`Expected ${PLAN_DAYS} days, got ${schedule.length}`);
+  if (schedule.length < MIN_PLAN_DAYS) {
+    errors.push(
+      `Expected at least ${MIN_PLAN_DAYS} days, got ${schedule.length}`,
+    );
+  }
+  if (schedule.length > MAX_PLAN_DAYS) {
+    errors.push(
+      `Expected at most ${MAX_PLAN_DAYS} days, got ${schedule.length}`,
+    );
   }
 
   const seenDates = new Set();
@@ -509,7 +530,7 @@ async function persistCalendarPlan(
 
     const planDoc = {
       user: userId,
-      name: plan.planName || `${PLAN_DAYS}-Day Workout Plan`,
+      name: plan.planName || `${plan.schedule.length}-Day Workout Plan`,
       status: "active",
       planShape: "calendar",
       generatedAt: new Date(),
@@ -667,6 +688,7 @@ async function callLlmAndPersist({
   resolveExerciseIndices(plan.schedule || [], exercises);
   clampReps(plan.schedule || [], exercises);
   clampVolume(plan.schedule || []);
+  normalizeScheduleLength(plan.schedule || [], logTag);
 
   const errors = validateSchedule(plan.schedule, allowedIds);
   if (errors.length > 0) {
