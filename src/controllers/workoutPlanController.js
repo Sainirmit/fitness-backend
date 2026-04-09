@@ -87,6 +87,28 @@ export const generate = async (req, res, next) => {
       });
     }
 
+    const STALE_GENERATING_MS = 45 * 60 * 1000;
+    const staleCutoff = new Date(Date.now() - STALE_GENERATING_MS);
+    await WorkoutPlan.deleteMany({
+      user: user._id,
+      status: "generating",
+      generatedAt: { $lt: staleCutoff },
+    });
+
+    const alreadyGenerating = await WorkoutPlan.findOne({
+      user: user._id,
+      status: "generating",
+    })
+      .select("_id")
+      .lean();
+    if (alreadyGenerating) {
+      return res.status(202).json({
+        message: "Plan generation already in progress. Poll generation-status for progress.",
+        workoutPlanId: alreadyGenerating._id,
+        status: "generating",
+      });
+    }
+
     await WorkoutPlan.updateMany(
       { user: user._id, status: "active" },
       { $set: { status: "archived" } },

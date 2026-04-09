@@ -515,7 +515,20 @@ function validateSchedule(schedule, allowedIds) {
 // Persist calendar plan to Mongo
 // ---------------------------------------------------------------------------
 
-async function persistCalendarPlan(
+/** MongoDB may abort overlapping transactions (e.g. two writers updating User). */
+function isRetryableTransactionError(err) {
+  if (!err) return false;
+  const labels = err.errorLabels;
+  if (Array.isArray(labels)) {
+    if (labels.includes("TransientTransactionError")) return true;
+    if (labels.includes("UnknownTransactionCommitResult")) return true;
+  }
+  if (err.code === 112) return true; // WriteConflict
+  if (/has been aborted/i.test(String(err.message || ""))) return true;
+  return false;
+}
+
+async function persistCalendarPlanOnce(
   userId,
   plan,
   onboardingSnapshot,
@@ -617,11 +630,55 @@ async function persistCalendarPlan(
     await session.commitTransaction();
     return workoutPlan;
   } catch (err) {
-    await session.abortTransaction();
+    try {
+      await session.abortTransaction();
+    } catch {
+      /* session may already be aborted server-side */
+    }
     throw err;
   } finally {
     session.endSession();
   }
+}
+
+const PERSIST_TX_MAX_ATTEMPTS = 4;
+
+async function persistCalendarPlan(
+  userId,
+  plan,
+  onboardingSnapshot,
+  bodySnapshot,
+  timeZone,
+  dailyStepGoal,
+  refinementMeta = {},
+) {
+  let lastErr;
+  for (let attempt = 1; attempt <= PERSIST_TX_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await persistCalendarPlanOnce(
+        userId,
+        plan,
+        onboardingSnapshot,
+        bodySnapshot,
+        timeZone,
+        dailyStepGoal,
+        refinementMeta,
+      );
+    } catch (err) {
+      lastErr = err;
+      const retry = isRetryableTransactionError(err) && attempt < PERSIST_TX_MAX_ATTEMPTS;
+      if (!retry) throw err;
+      const delayMs = 120 * 2 ** (attempt - 1);
+      console.warn("[WorkoutGen] persist transaction retry", {
+        attempt,
+        delayMs,
+        message: err?.message,
+        labels: err?.errorLabels,
+      });
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
 }
 
 // ---------------------------------------------------------------------------
