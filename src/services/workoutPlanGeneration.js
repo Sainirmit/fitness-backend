@@ -20,9 +20,10 @@ import WorkoutDay from "../models/WorkoutDay.js";
 import WorkoutDayExercise from "../models/WorkoutDayExercise.js";
 import User from "../models/User.js";
 
+/** Minimum accepted schedule length; LLM prompts require exactly this many days. */
 const MIN_PLAN_DAYS = 21;
 const MAX_PLAN_DAYS = 30;
-/** Prompt / docs target; persisted length is clamped to [MIN_PLAN_DAYS, MAX_PLAN_DAYS]. */
+/** Alias for prompts and legacy strings (21-day calendar target). */
 const PLAN_DAYS = MIN_PLAN_DAYS;
 
 // ---------------------------------------------------------------------------
@@ -89,7 +90,14 @@ General programming principles when no trainer-specific rules are available:
 - focusAreas indicates where the athlete wants to improve. Apply this intelligently: large muscles (back, glutes, quads, chest) can take higher direct volume; small muscles (biceps, triceps, calves) already receive indirect load from compounds — add targeted isolation sparingly (2-3 sets), keep reps in the 10-15 hypertrophy range, and never sacrifice antagonist balance or recovery.
 `.trim();
 
-const CALENDAR_INSTRUCTIONS = `You are MyTrainr AI — an expert personal trainer. Your sole task is to output a 21-day workout plan as a single JSON object. No markdown, no explanation, no extra keys.
+const CALENDAR_INSTRUCTIONS = `You are MyTrainr AI — an expert personal trainer. Your sole task is to output one JSON object: a workout plan whose "schedule" array has exactly ${MIN_PLAN_DAYS} days. No markdown, no explanation, no extra keys.
+
+<schedule_length>
+MANDATORY — non-negotiable:
+- The "schedule" array MUST have exactly ${MIN_PLAN_DAYS} elements (${MIN_PLAN_DAYS} day objects). Not ${MIN_PLAN_DAYS - 1}, not ${MIN_PLAN_DAYS + 1}, not any other length.
+- Those ${MIN_PLAN_DAYS} days are ${MIN_PLAN_DAYS} consecutive calendar days starting from the startDate in the user message (inclusive): one object per date, no gaps, no duplicate dateKey values.
+- Before you finish, mentally count schedule.length === ${MIN_PLAN_DAYS}. If not, fix the output before responding.
+</schedule_length>
 
 <output_schema>
 {
@@ -193,7 +201,7 @@ VOLUME:
 
 REST DAYS:
   isRestDay=true, exercises=[], estimatedDurationMinutes=null, proTip="".
-  Output EXACTLY 21 days starting from the given start date.
+  The full schedule is always exactly ${MIN_PLAN_DAYS} consecutive days from the given start date — see <schedule_length>.
   Non-training days (per workoutDays) are always rest days.
 </programming_rules>`;
 
@@ -246,7 +254,7 @@ ${JSON.stringify(profile)}
 <calendar>
 startDate: ${todayDateKey}
 timezone: ${timeZone}
-totalDays: 21
+totalDays: ${MIN_PLAN_DAYS}
 trainingDaysPerWeek: ${user.workoutDays.length}
 trainingDays: ${user.workoutDays.join(", ")}
 </calendar>
@@ -261,11 +269,12 @@ Fields: i=exerciseIndex (use as exerciseIndex in output), n=name, t=exerciseType
 ${JSON.stringify(compact)}
 </exercises>
 
-Build a 21-day calendar plan starting ${todayDateKey}.
+Build a calendar plan starting ${todayDateKey} with exactly ${MIN_PLAN_DAYS} consecutive days in "schedule" (see <schedule_length> in system instructions — array length must be ${MIN_PLAN_DAYS}).
 Choose the training split that best serves this athlete's goals, schedule, and focusAreas — refer to SPLIT DESIGN in the system instructions.
 Apply the FOCUS AREAS rules from the system instructions: focusAreas = [${(user.focusAreas || []).map((f) => `"${f}"`).join(", ") || '"none"'}]. Think like a real personal trainer — consider muscle size, recovery capacity, indirect stimulus from compounds, and antagonist balance before deciding how much direct isolation volume to add.
 Cycle the split across all 3 weeks with progressive overload as instructed.
-Select exercises that match workoutEnvironment="${user.workoutEnvironment}" and fitnessLevel="${user.fitnessLevel}".`;
+Select exercises that match workoutEnvironment="${user.workoutEnvironment}" and fitnessLevel="${user.fitnessLevel}".
+FINAL CHECK: "schedule" must contain exactly ${MIN_PLAN_DAYS} objects, one per calendar day from ${todayDateKey} onward without skipping or duplicating dates.`;
 }
 
 function buildPhotoRefinementSection(photoProfile) {
@@ -319,7 +328,8 @@ Align rep ranges and exercise density with the observed composition:
   In specialInstructions, start with "composition: " when the change is composition-driven.
 
 ━━━ STRUCTURAL HARD CONSTRAINTS ━━━
-- PRESERVE the 21-day calendar structure exactly: same dateKeys, same rest days, same weekday pattern.
+- The output "schedule" MUST contain exactly ${MIN_PLAN_DAYS} day objects — same count as the input plan (${MIN_PLAN_DAYS} consecutive calendar days). Do not add or remove days.
+- PRESERVE the ${MIN_PLAN_DAYS}-day calendar structure exactly: same dateKeys, same rest days, same weekday pattern.
 - PRESERVE the training split (same push/pull/legs or other chosen structure) — do not change which muscles are trained each day.
 - Do NOT add extra training days beyond workoutDays.
 - Total weekly set count must not increase by more than 20% vs a baseline plan for this athlete profile.

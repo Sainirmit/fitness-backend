@@ -7,8 +7,9 @@
   `Authorization: Bearer <accessToken>`  
   where `accessToken` is the string returned by `POST /api/auth/google` or `POST /api/auth/apple`.
 - **JWT**: Signed with `JWT_SECRET`; expiry from env `JWT_EXPIRES_IN` (default **`7d`** if unset).
-- **Errors**: Non-2xx responses typically include `{ "message": "..." }`. Validation / duplicate key / cast errors may use 400 / 409 with messages from the global error handler.
-- **401 (protected routes)**: Typical messages are `Authorization header missing or malformed. Expected: Bearer <token>`, `Access token is invalid or has expired.`, or `User belonging to this token no longer exists.` (see `src/middleware/auth.js`).
+- **Errors**: All non-2xx responses use a standardized envelope (see **Error envelope** below). Never rely on raw `message` alone — always key on `code`.
+- **401 (protected routes)**: Machine-readable codes: `UNAUTHORIZED`, `TOKEN_EXPIRED`, `USER_NOT_FOUND`.
+- **Rate limiting**: All `/api/*` routes are globally rate-limited. High-cost endpoints (generation, photo upload/refinement) have stricter per-user limits. When exceeded, the response is `429` with `code: "RATE_LIMITED"` and standard `RateLimit-*` / `Retry-After` headers.
 
 ### Quick reference — all HTTP routes
 
@@ -531,6 +532,8 @@ None (use query string).
 
 1. `PUT signedUrl` with raw body = image bytes, `Content-Type` matching what you requested.
 2. After both images are uploaded, call **`POST /api/body-photos`** with `frontImageUrl` / `sideImageUrl` set to the returned **`publicUrl`** values (see below).
+3. In Postman, for S3 upload calls, use **Body -> binary** with the actual image file. Sending an empty/raw body will create a 0-byte object and refinement will fail.
+4. Prefer `fileName` with extension (for example `men_front.png`, `men_side.jpg`) so generated keys are clean and easier to debug.
 
 ---
 
@@ -581,10 +584,24 @@ JSON body:
 
 **401** — Invalid token.
 
-**500** — Server error message in `message` / `error`.
+**409** — Enhancement already used for the current plan window:
+
+```json
+{
+  "code": "REFINEMENT_ALREADY_USED",
+  "message": "You have already enhanced your workout for the current plan period. Enhancement will be available again after your current plan ends.",
+  "retryAfter": "2026-04-20T23:59:59.000Z",
+  "retryable": false
+}
+```
+
+**429** — Rate limited (too many photo upload requests).
+
+**500** — Standardized error envelope (see below).
 
 ### Additional details
 
+- **Enhancement is allowed once per active plan window.** After a refinement plan is generated, the user cannot trigger another enhancement until the current plan's `endDate` passes. The `retryAfter` field in the 409 response tells the frontend when enhancement unlocks.
 - Poll **`GET /api/workout-plans/refinement-status/:bodyPhotosId`** until `status` is `completed` or `failed`.
 - If stage 2 succeeds, a new active plan exists (or replaces a previous active plan). Use **`GET /api/workout-plans/current`** to load it.
 
@@ -984,6 +1001,7 @@ Each day includes an `exercises` array with populated `exercise` documents (name
 
 - Check `workoutPlan.planShape` to determine which response shape to expect.
 - For calendar plans, use `startDate`/`endDate` query params to page through the **21-day** calendar window (defaults to the ISO week containing “today” in the resolved timezone).
+- Exercise rows include both `setType` (canonical) and `category` (frontend alias with same value). Use `category === "dropset"` to show dropset UI info popups.
 
 ---
 
@@ -1019,6 +1037,8 @@ None.
 {
   "status": "pending",
   "error": null,
+  "errorCode": null,
+  "errorDetails": null,
   "completedAt": null
 }
 ```
@@ -1031,9 +1051,33 @@ When `status` is **`completed`**, additional fields may appear:
 {
   "status": "completed",
   "error": null,
+  "errorCode": null,
+  "errorDetails": null,
   "completedAt": "<ISO date>",
   "resultPlanId": "<ObjectId>",
   "resultPlanStatus": "active"
+}
+```
+
+When `status` is **`failed`**, use `errorCode` + `errorDetails` to drive frontend states:
+
+```json
+{
+  "status": "failed",
+  "error": "Photos could not be analyzed. Please retake: ...",
+  "errorCode": "INVALID_PHOTOS",
+  "errorDetails": {
+    "failedChecks": ["fullBodyVisible", "frontPoseCorrect"],
+    "blockers": ["fullBodyVisible", "frontPoseCorrect"],
+    "qualityFlags": {
+      "lightingAdequate": true,
+      "fullBodyVisible": false,
+      "clothingAppropriate": true,
+      "frontPoseCorrect": false,
+      "sidePoseCorrect": true
+    }
+  },
+  "completedAt": null
 }
 ```
 
@@ -1056,6 +1100,78 @@ When `status` is **`completed`**, additional fields may appear:
 4. **`POST /api/body-photos`** with `frontImageUrl` + `sideImageUrl` = the **`publicUrl`** values from step 2.
 5. Poll **`GET /api/workout-plans/refinement-status/:bodyPhotosId`** using `_id` from step 4.
 6. On `completed`, **`GET /api/workout-plans/current`** for full plan + exercises.
+
+---
+
+## Refine button flow (API URL / BODY / PARAMS-HEADERS)
+
+### Step 1 — Front upload URL
+
+- **API URL**: `GET /api/body-photos/upload-url`
+- **BODY**: None
+- **PARAMS / HEADERS / ETC**:
+  - Query: `fileName`, `contentType`, `imageType=front`
+  - Header: `Authorization: Bearer <accessToken>`
+
+### Step 2 — Upload front file to S3 (signed URL)
+
+- **API URL**: `<signedUrl from Step 1>`
+- **BODY**: Binary image file
+- **PARAMS / HEADERS / ETC**:
+  - Method: `PUT`
+  - Header: `Content-Type` must match requested `contentType`
+
+### Step 3 — Side upload URL
+
+- **API URL**: `GET /api/body-photos/upload-url`
+- **BODY**: None
+- **PARAMS / HEADERS / ETC**:
+  - Query: `fileName`, `contentType`, `imageType=side`
+  - Header: `Authorization: Bearer <accessToken>`
+
+### Step 4 — Upload side file to S3 (signed URL)
+
+- **API URL**: `<signedUrl from Step 3>`
+- **BODY**: Binary image file
+- **PARAMS / HEADERS / ETC**:
+  - Method: `PUT`
+  - Header: `Content-Type` must match requested `contentType`
+
+### Step 5 — Create photo record + queue refinement
+
+- **API URL**: `POST /api/body-photos`
+- **BODY**:
+
+```json
+{
+  "frontImageUrl": "<publicUrl from Step 1>",
+  "sideImageUrl": "<publicUrl from Step 3>",
+  "bodyDetailsId": "<optional>",
+  "periodType": "<optional>"
+}
+```
+
+- **PARAMS / HEADERS / ETC**:
+  - Header: `Authorization: Bearer <accessToken>`
+  - Header: `Content-Type: application/json`
+  - Save `bodyPhotos._id` from response
+
+### Step 6 — Poll refinement status
+
+- **API URL**: `GET /api/workout-plans/refinement-status/:bodyPhotosId`
+- **BODY**: None
+- **PARAMS / HEADERS / ETC**:
+  - Path: `bodyPhotosId` from Step 5
+  - Header: `Authorization: Bearer <accessToken>`
+  - Poll every 2-5s until `completed` or `failed`
+
+### Step 7 — Fetch refined plan
+
+- **API URL**: `GET /api/workout-plans/current`
+- **BODY**: None
+- **PARAMS / HEADERS / ETC**:
+  - Header: `Authorization: Bearer <accessToken>`
+  - Optional query: `startDate`, `endDate`
 
 ---
 
@@ -1334,7 +1450,8 @@ None.
         "prescribedRepMax": 12,
         "prescribedRestSeconds": 120,
         "specialInstructions": "Dropset last 2",
-        "setType": "main"
+        "setType": "main",
+        "category": "main"
       },
       "orderInSession": 1,
       "setLogs": [
@@ -1951,15 +2068,80 @@ None.
 
 ---
 
-## Global error shapes (reference)
+## Error envelope (all non-2xx responses)
 
-| Situation            | Typical status | Body                                            |
-| -------------------- | -------------- | ----------------------------------------------- |
-| Mongoose validation  | 400            | `{ "message": "<joined field messages>" }`      |
-| Invalid ObjectId     | 400            | `{ "message": "Invalid value for field: ..." }` |
-| Duplicate unique key | 409            | `{ "message": "<field> is already in use." }`   |
-| Unhandled error      | 500            | `{ "message": "<message>" }`                    |
-| No matching route    | 404            | `{ "message": "Route not found" }`              |
+Every error response follows this shape:
+
+```json
+{
+  "code": "MACHINE_READABLE_CODE",
+  "message": "Human-readable, user-safe message.",
+  "retryable": false,
+  "requestId": "a1b2c3d4e5f6g7h8",
+  "details": {}
+}
+```
+
+| Field       | Type    | Always present | Description                                                  |
+| ----------- | ------- | -------------- | ------------------------------------------------------------ |
+| `code`      | string  | yes            | Stable machine-readable code (UPPER_SNAKE_CASE)              |
+| `message`   | string  | yes            | Safe for display in toasts/alerts                            |
+| `retryable` | boolean | yes            | `true` if the same request may succeed on retry              |
+| `requestId` | string  | yes            | Unique trace ID for support/debugging                        |
+| `details`   | object  | no             | Structured context (e.g. failed quality checks on photos)    |
+
+### Error code reference
+
+| Code                          | HTTP | Meaning                                                         |
+| ----------------------------- | ---- | --------------------------------------------------------------- |
+| `RATE_LIMITED`                | 429  | Too many requests; obey `Retry-After` header                   |
+| `UNAUTHORIZED`                | 401  | Missing or malformed `Authorization` header                     |
+| `TOKEN_EXPIRED`               | 401  | JWT invalid or expired                                          |
+| `USER_NOT_FOUND`              | 401  | User for this token no longer exists                            |
+| `BAD_REQUEST`                 | 400  | Generic client error                                            |
+| `VALIDATION_ERROR`            | 400  | Mongoose schema validation failure                              |
+| `INVALID_PARAMETER`           | 400  | Invalid ObjectId or path param                                  |
+| `NOT_FOUND`                   | 404  | Resource or route not found                                     |
+| `CONFLICT`                    | 409  | Generic conflict                                                |
+| `DUPLICATE_VALUE`             | 409  | MongoDB unique-key violation                                    |
+| `REFINEMENT_ALREADY_USED`     | 409  | Enhancement consumed for current plan window                    |
+| `GENERATION_FAILED`           | 200  | Poll response: background generation failed (status=`failed`)   |
+| `INTERNAL_ERROR`              | 500  | Unexpected server error (always `retryable: true`)              |
+
+### Rate-limit headers
+
+All rate-limited responses (429) include standard headers:
+
+| Header              | Description                                   |
+| ------------------- | --------------------------------------------- |
+| `RateLimit-Limit`   | Max requests allowed in the window             |
+| `RateLimit-Remaining` | Requests remaining in the current window     |
+| `RateLimit-Reset`   | Seconds until the window resets                |
+| `Retry-After`       | Seconds to wait before retrying                |
+
+### Rate-limit tiers
+
+| Tier                 | Scope                                          | Default window | Default max | Key       |
+| -------------------- | ---------------------------------------------- | -------------- | ----------- | --------- |
+| Global baseline      | All `/api/*`                                   | 1 min          | 100         | IP        |
+| Auth                 | `/api/auth/*`                                  | 15 min         | 20          | IP        |
+| AI generation        | `POST /api/workout-plans/generate`             | 1 hr           | 5           | User ID   |
+| Photo upload/refine  | `POST /api/body-photos`, `GET .../upload-url`  | 1 hr           | 6           | User ID   |
+| Polling              | `GET .../generation-status`, `GET .../refinement-status` | 1 min  | 60          | User ID   |
+
+All thresholds are env-configurable (see `.env.example`).
+
+---
+
+## Frontend integration checklist (preventing console errors)
+
+1. **Consume the error envelope**: For all non-2xx responses, read `code`, `message`, and `retryable`. Never log or display raw `error.message` from catch blocks.
+2. **Handle `RATE_LIMITED` gracefully**: Show a brief "Please wait" toast; use `Retry-After` header for automatic retry timing.
+3. **Handle `REFINEMENT_ALREADY_USED`**: Show contextual UI ("Enhancement available after [date]") using `retryAfter` from the response.
+4. **Treat polling `failed` as a UI state**: When `generation-status` or `refinement-status` returns `status: "failed"`, display the user-safe `error` message in-app instead of throwing.
+5. **Use `requestId` for support**: When surfacing "contact support" UI, include `requestId` so backend logs can be correlated.
+6. **Do not log response bodies to console in production**: Log only `requestId` + `code` for telemetry. Avoid `console.error(response.data)` patterns.
+7. **Handle 401 centrally**: Use an Axios/fetch interceptor to catch `TOKEN_EXPIRED` or `UNAUTHORIZED` and redirect to login instead of letting unhandled promise rejections fire.
 
 ---
 
