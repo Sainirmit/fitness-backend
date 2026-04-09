@@ -1,7 +1,6 @@
 import express from 'express';
 import { protect } from '../middleware/auth.js';
 import {
-  uploadBodyPhotos,
   create,
   list,
   getById,
@@ -16,10 +15,7 @@ const router = express.Router();
 // All routes require authentication
 router.use(protect);
 
-// Upload body photos (multipart form data)
-router.post('/upload', uploadBodyPhotos);
-
-// Get upload signed URL (for direct upload)
+// Get upload signed URL (for direct upload to S3, then POST / with public URLs)
 router.get('/upload-url', getUploadUrl);
 
 // Get access signed URL (for viewing images)

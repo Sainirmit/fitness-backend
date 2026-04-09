@@ -36,7 +36,5 @@ const workoutSessionExerciseSchema = new mongoose.Schema(
 
 // Indexes for efficient queries
 workoutSessionExerciseSchema.index({ workoutSession: 1, orderInSession: 1 }, { unique: true });
-workoutSessionExerciseSchema.index({ workoutSession: 1 });
-workoutSessionExerciseSchema.index({ workoutDayExercise: 1 });
 
 export default mongoose.model('WorkoutSessionExercise', workoutSessionExerciseSchema);

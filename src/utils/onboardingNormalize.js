@@ -17,17 +17,3 @@ export function normalizeOptionValue(label) {
     .replace(/\s+/g, '_')
     .replace(/[^a-z0-9_]/g, '');
 }
-
-/**
- * Normalize free-text home equipment into an array of strings.
- * e.g. "dumbbells, resistance bands, pull-up bar" → ["dumbbells", "resistance_bands", "pull_up_bar"]
- * @param {string} text - Raw input from user
- * @returns {string[]}
- */
-export function normalizeHomeEquipment(text) {
-  if (typeof text !== 'string' || !text.trim()) return [];
-  return text
-    .split(/[,;]/)
-    .map((s) => normalizeOptionValue(s))
-    .filter(Boolean);
-}

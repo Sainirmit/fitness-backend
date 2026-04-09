@@ -1,21 +1,13 @@
-import User from '../models/User.js';
-import BodyDetails from '../models/BodyDetails.js';
-import {
-  normalizeOptionValue,
-  normalizeHomeEquipment,
-} from '../utils/onboardingNormalize.js';
-
-// --- Unit conversion helpers ---
-const lbsToKg = (lbs) => Math.round(lbs * 0.453592 * 10) / 10;
-// heightUnit "ft_in" → frontend sends total inches (e.g. 5'11" → 71)
-const inchesToCm = (inches) => Math.round(inches * 2.54 * 10) / 10;
+import User from "../models/User.js";
+import { normalizeOptionValue } from "../utils/onboardingNormalize.js";
+import { createBodyDetailsForUser } from "../services/bodyDetailsService.js";
 
 // Fields the client is NOT allowed to set directly
 const PROTECTED_FIELDS = new Set([
-  'email',
-  'provider',
-  'providerId',
-  'hasUnlockedPlan',
+  "email",
+  "provider",
+  "providerId",
+  "hasUnlockedPlan",
 ]);
 
 /**
@@ -53,7 +45,7 @@ export const getMe = async (req, res) => {
  *
  *     "workoutDays":             ["mon", "wed", "fri"],
  *     "preferredWorkoutTime":    "morning",
- *     "activityLevel":           "moderate",
+ *     "activityLevelApartFromWorkout": "moderate",
  *     "focusAreas":              ["back", "core_abs"],
  *
  *     "dietType":                "non_vegetarian",
@@ -62,8 +54,8 @@ export const getMe = async (req, res) => {
  *     "onboardingCompleted":     true
  *   }
  *
- * Body detail fields (gender, age, weight, height + units) create a new
- * BodyDetails snapshot automatically — no separate API call needed.
+ * Body detail fields (gender, age, weight, height + units) upsert the single
+ * BodyDetails document for this user — no separate API call needed.
  *
  * Response 200: { user, bodyDetails? }
  */
@@ -84,7 +76,7 @@ export const updateMe = async (req, res) => {
     fitnessLevel,
     motivations,
 
-    // ── Phase 2 – body details (creates BodyDetails snapshot) ──
+    // ── Phase 2 – body details (upserts BodyDetails) ──
     gender,
     age,
     weight,
@@ -95,10 +87,9 @@ export const updateMe = async (req, res) => {
     // ── Phase 2 – workout / diet prefs ──
     workoutEnvironment,
     weightliftingExperience,
-    homeEquipment,
     workoutDays,
     preferredWorkoutTime,
-    activityLevel,
+    activityLevelApartFromWorkout,
     focusAreas,
     dietType,
     mealsPerDay,
@@ -131,22 +122,19 @@ export const updateMe = async (req, res) => {
   if (weightliftingExperience !== undefined)
     userUpdates.weightliftingExperience = weightliftingExperience;
 
-  if (homeEquipment !== undefined) {
-    userUpdates.homeEquipment = Array.isArray(homeEquipment)
-      ? homeEquipment.map(normalizeOptionValue).filter(Boolean)
-      : normalizeHomeEquipment(homeEquipment); // handles free-text string
-  }
-
   if (workoutDays !== undefined)
     userUpdates.workoutDays = workoutDays
       .map(normalizeOptionValue)
       .filter(Boolean);
 
   if (preferredWorkoutTime !== undefined)
-    userUpdates.preferredWorkoutTime = normalizeOptionValue(preferredWorkoutTime);
+    userUpdates.preferredWorkoutTime =
+      normalizeOptionValue(preferredWorkoutTime);
 
-  if (activityLevel !== undefined)
-    userUpdates.activityLevel = normalizeOptionValue(activityLevel);
+  if (activityLevelApartFromWorkout !== undefined)
+    userUpdates.activityLevelApartFromWorkout = normalizeOptionValue(
+      activityLevelApartFromWorkout,
+    );
 
   if (focusAreas !== undefined)
     userUpdates.focusAreas = focusAreas
@@ -164,34 +152,24 @@ export const updateMe = async (req, res) => {
   const user = await User.findByIdAndUpdate(
     req.user._id,
     { $set: userUpdates },
-    { new: true, runValidators: true }
+    { new: true, runValidators: true },
   );
 
-  // ── Create BodyDetails snapshot if any body-metric fields were sent ──
+  // ── Upsert BodyDetails if any core body-metric fields were sent ──
   const hasBodyFields = [gender, age, weight, height].some(
-    (v) => v !== undefined
+    (v) => v !== undefined,
   );
 
   let bodyDetails = null;
 
   if (hasBodyFields) {
-    // Convert to canonical storage units (kg, cm)
-    const storedWeight =
-      weight !== undefined && weightUnit === 'lbs' ? lbsToKg(weight) : weight;
-
-    const storedHeight =
-      height !== undefined && heightUnit === 'ft_in'
-        ? inchesToCm(height)  // expects total inches
-        : height;
-
-    bodyDetails = await BodyDetails.create({
-      user: req.user._id,
-      ...(gender !== undefined && { gender }),
-      ...(age !== undefined && { age }),
-      ...(storedWeight !== undefined && { weight: storedWeight }),
-      ...(weightUnit !== undefined && { weightUnit }),
-      ...(storedHeight !== undefined && { height: storedHeight }),
-      ...(heightUnit !== undefined && { heightUnit }),
+    bodyDetails = await createBodyDetailsForUser(req.user._id, {
+      gender,
+      age,
+      weight,
+      weightUnit,
+      height,
+      heightUnit,
     });
   }
 

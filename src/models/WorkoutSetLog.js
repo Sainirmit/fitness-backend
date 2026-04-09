@@ -76,7 +76,6 @@ const workoutSetLogSchema = new mongoose.Schema(
 
 // Indexes for efficient queries
 workoutSetLogSchema.index({ workoutSessionExercise: 1, setNumber: 1 }, { unique: true });
-workoutSetLogSchema.index({ workoutSessionExercise: 1 });
 workoutSetLogSchema.index({ loggedAt: -1 });
 
 export default mongoose.model('WorkoutSetLog', workoutSetLogSchema);

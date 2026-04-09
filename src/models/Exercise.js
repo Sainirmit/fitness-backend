@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 /**
  * Exercise – Master catalog of exercises.
@@ -15,7 +15,7 @@ const exerciseSchema = new mongoose.Schema(
     description: {
       type: String,
       trim: true,
-      default: '',
+      default: "",
       // Instructions / steps for exercise modal
     },
     videoUrl: {
@@ -27,7 +27,7 @@ const exerciseSchema = new mongoose.Schema(
     thumbnailUrl: {
       type: String,
       trim: true,
-      default: '',
+      default: "",
       // Optional thumbnail for lists/cards
     },
     exerciseType: {
@@ -35,7 +35,7 @@ const exerciseSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
       required: true,
-      enum: ['strength', 'cardio', 'bodyweight'],
+      enum: ["strength", "cardio", "bodyweight"],
       // 'strength' | 'cardio' | 'bodyweight'
     },
     muscleGroups: {
@@ -52,7 +52,7 @@ const exerciseSchema = new mongoose.Schema(
       type: String,
       trim: true,
       lowercase: true,
-      enum: ['beginner', 'intermediate', 'advanced'],
+      enum: ["beginner", "intermediate", "advanced"],
       // 'beginner' | 'intermediate' | 'advanced'
     },
     defaultSets: {
@@ -97,17 +97,29 @@ const exerciseSchema = new mongoose.Schema(
       default: null,
       // Default incline (cardio)
     },
+    catalogKey: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      required: true,
+      enum: ["male_gym", "male_home", "female_gym", "female_home"],
+    },
     isActive: {
       type: Boolean,
       default: true,
-      // Set false to hide from catalog
     },
   },
   {
     timestamps: true,
-    toJSON: { virtuals: false, transform: (_, ret) => { delete ret.__v; return ret; } },
+    toJSON: {
+      virtuals: false,
+      transform: (_, ret) => {
+        delete ret.__v;
+        return ret;
+      },
+    },
     toObject: { virtuals: false },
-  }
+  },
 );
 
 // Indexes for efficient queries
@@ -115,6 +127,8 @@ exerciseSchema.index({ exerciseType: 1 });
 exerciseSchema.index({ isActive: 1 });
 exerciseSchema.index({ muscleGroups: 1 });
 exerciseSchema.index({ equipment: 1 });
-exerciseSchema.index({ name: 'text', description: 'text' }); // For search
+exerciseSchema.index({ catalogKey: 1 });
+exerciseSchema.index({ catalogKey: 1, muscleGroups: 1 });
+exerciseSchema.index({ name: "text", description: "text" });
 
-export default mongoose.model('Exercise', exerciseSchema);
+export default mongoose.model("Exercise", exerciseSchema);

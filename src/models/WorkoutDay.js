@@ -2,7 +2,10 @@ import mongoose from 'mongoose';
 
 /**
  * WorkoutDay – One "day" in a workout plan.
- * e.g. "Day 1: Chest & Triceps", with estimated duration, exercise count, and pro tip.
+ *
+ * Template plans (planShape "template"): dayNumber 1..N, scheduledDateKey is null.
+ * Calendar plans (planShape "calendar"):  dayNumber 1..28, each row has a
+ * unique scheduledDateKey (YYYY-MM-DD) and may be a rest day.
  */
 const workoutDaySchema = new mongoose.Schema(
   {
@@ -10,51 +13,69 @@ const workoutDaySchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'WorkoutPlan',
       required: true,
-      index: true,
     },
     dayNumber: {
       type: Number,
       required: true,
       min: 1,
-      // 1, 2, 3, …
+    },
+    scheduledDateKey: {
+      type: String,
+      trim: true,
+      default: null,
+      match: /^\d{4}-\d{2}-\d{2}$/,
+    },
+    isRestDay: {
+      type: Boolean,
+      default: false,
     },
     name: {
       type: String,
       trim: true,
       default: '',
-      // e.g. "Chest & Triceps", "Delts & Core"
     },
     estimatedDurationMinutes: {
       type: Number,
       min: 1,
       default: null,
-      // e.g. 85 for "1h 25m"
     },
     exerciseCount: {
       type: Number,
       min: 0,
       default: 0,
-      // Denormalized count for list UI
     },
     iconIdentifier: {
       type: String,
       trim: true,
       default: '',
-      // e.g. "chest_triceps" for UI asset
     },
     proTip: {
       type: String,
       trim: true,
       default: '',
-      // Pro tip for that day
     },
     status: {
       type: String,
       trim: true,
       lowercase: true,
-      enum: ['planned', 'completed', 'skipped'],
+      enum: ['planned', 'in_progress', 'completed', 'skipped', 'missed'],
       default: 'planned',
-      // e.g. 'planned' | 'completed' | 'skipped'
+    },
+
+    // Calendar-plan fields (null for template-shaped plans)
+    timeZone: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    missedAfterUtc: {
+      type: Date,
+      default: null,
+    },
+    activeSession: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WorkoutSession',
+      default: null,
     },
   },
   {
@@ -64,8 +85,13 @@ const workoutDaySchema = new mongoose.Schema(
   }
 );
 
-// Indexes for efficient queries
 workoutDaySchema.index({ workoutPlan: 1, dayNumber: 1 }, { unique: true });
 workoutDaySchema.index({ workoutPlan: 1 });
+workoutDaySchema.index(
+  { workoutPlan: 1, scheduledDateKey: 1 },
+  { unique: true, sparse: true },
+);
+workoutDaySchema.index({ scheduledDateKey: 1 });
+workoutDaySchema.index({ missedAfterUtc: 1, status: 1 });
 
 export default mongoose.model('WorkoutDay', workoutDaySchema);

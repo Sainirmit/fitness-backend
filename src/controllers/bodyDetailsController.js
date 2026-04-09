@@ -1,14 +1,12 @@
 import BodyDetails from '../models/BodyDetails.js';
-
-const lbsToKg = (lbs) => Math.round(lbs * 0.453592 * 10) / 10;
-const inchesToCm = (inches) => Math.round(inches * 2.54 * 10) / 10;
+import { createBodyDetailsForUser } from '../services/bodyDetailsService.js';
 
 /**
- * POST /api/body-details
+ * PUT /api/body-details  (preferred)
+ * POST /api/body-details  (same behavior — create snapshot)
  *
- * Standalone endpoint for adding a new body-metrics snapshot (e.g. weekly check-in).
- * During onboarding, body details are created automatically by PATCH /api/users/me —
- * no need to call this endpoint separately.
+ * Creates a new body-metrics snapshot document for the authenticated user.
+ * Use recordedAt to backdate (optional).
  *
  * Payload:
  *   {
@@ -18,50 +16,38 @@ const inchesToCm = (inches) => Math.round(inches * 2.54 * 10) / 10;
  *     "weightUnit": "lbs",        ← "kg" | "lbs"  (stored as kg)
  *     "height":     71,           ← in heightUnit (total inches when "ft_in")
  *     "heightUnit": "ft_in",      ← "cm" | "ft_in"  (stored as cm)
- *     "recordedAt": "2026-03-01"  ← optional, defaults to now
+ *     "recordedAt": "2026-03-01"  ← optional
  *   }
  *
- * Response 201: { bodyDetails }
+ * Response 200: { bodyDetails }
+ * Response 400: no recognized fields to persist
  */
-export const create = async (req, res) => {
-  const { gender, age, weight, weightUnit, height, heightUnit, recordedAt } =
-    req.body;
+export const upsert = async (req, res) => {
+  const bodyDetails = await createBodyDetailsForUser(req.user._id, req.body);
 
-  const storedWeight =
-    weight !== undefined && weightUnit === 'lbs' ? lbsToKg(weight) : weight;
+  if (!bodyDetails) {
+    return res.status(400).json({
+      message:
+        'Provide at least one field to save (e.g. gender, age, weight, height, weightUnit, heightUnit, recordedAt).',
+    });
+  }
 
-  const storedHeight =
-    height !== undefined && heightUnit === 'ft_in'
-      ? inchesToCm(height)
-      : height;
-
-  const bodyDetails = await BodyDetails.create({
-    user: req.user._id,
-    ...(gender !== undefined && { gender }),
-    ...(age !== undefined && { age }),
-    ...(storedWeight !== undefined && { weight: storedWeight }),
-    ...(weightUnit !== undefined && { weightUnit }),
-    ...(storedHeight !== undefined && { height: storedHeight }),
-    ...(heightUnit !== undefined && { heightUnit }),
-    ...(recordedAt !== undefined && { recordedAt }),
-  });
-
-  return res.status(201).json({ bodyDetails });
+  return res.status(200).json({ bodyDetails });
 };
 
 /**
  * GET /api/body-details
  *
- * Returns all body snapshots for the authenticated user, sorted newest first.
+ * Returns body details snapshots for the authenticated user (0..N documents).
  *
  * Query params:
- *   ?latest=true  → returns only the most recent snapshot (as a 1-item array)
+ *   ?latest=true  → returns just the latest snapshot (as a 0/1 array)
  *
  * Response 200: { bodyDetails: [...] }
  */
 export const list = async (req, res) => {
   const filter = { user: req.user._id };
-  const sort = { createdAt: -1 };
+  const sort = { recordedAt: -1, createdAt: -1 };
 
   if (req.query.latest === 'true') {
     const latest = await BodyDetails.findOne(filter).sort(sort);

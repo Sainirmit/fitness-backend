@@ -11,13 +11,11 @@ const workoutDayExerciseSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'WorkoutDay',
       required: true,
-      index: true,
     },
     exercise: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Exercise',
       required: true,
-      index: true,
     },
     orderInDay: {
       type: Number,

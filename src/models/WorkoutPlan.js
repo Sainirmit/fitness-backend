@@ -10,7 +10,6 @@ const workoutPlanSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
-      index: true,
     },
     name: {
       type: String,
@@ -23,9 +22,13 @@ const workoutPlanSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
       required: true,
-      enum: ['pending_generation', 'active', 'completed', 'archived'],
+      enum: ['pending_generation', 'generating', 'active', 'failed', 'completed', 'archived'],
       default: 'pending_generation',
-      // 'pending_generation' | 'active' | 'completed' | 'archived'
+    },
+    generationError: {
+      type: String,
+      trim: true,
+      default: null,
     },
     generatedAt: {
       type: Date,
@@ -51,6 +54,39 @@ const workoutPlanSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
       // Extra AI/provider metadata
+    },
+
+    planShape: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      enum: ['template', 'calendar'],
+      default: 'template',
+    },
+
+    // ── Photo-based refinement tracking ──
+    generationType: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      enum: ['initial', 'photo_refinement'],
+      default: 'initial',
+    },
+    sourceBodyPhotos: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'BodyPhotos',
+      default: null,
+    },
+    supersedesPlanId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WorkoutPlan',
+      default: null,
+    },
+
+    dailyStepGoal: {
+      type: Number,
+      min: 0,
+      default: null,
     },
   },
   {

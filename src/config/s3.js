@@ -126,4 +126,21 @@ export const extractFileNameFromUrl = (s3Url) => {
   return s3Url.split('/').pop();
 };
 
+/**
+ * Extract the full S3 object key from a public S3 URL.
+ * e.g. "https://bucket.s3.region.amazonaws.com/body-photos/uid/front-123.jpg"
+ *   → "body-photos/uid/front-123.jpg"
+ * @param {string} s3Url
+ * @returns {string|null}
+ */
+export const extractS3KeyFromUrl = (s3Url) => {
+  if (!s3Url) return null;
+  try {
+    const url = new URL(s3Url);
+    return decodeURIComponent(url.pathname.slice(1));
+  } catch {
+    return s3Url;
+  }
+};
+
 export { s3Client, BUCKET_NAME };

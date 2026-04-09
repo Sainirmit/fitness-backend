@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 /**
  * BodyDetails – separate collection for body/biometrics (MyTrainr AI).
- * One document per snapshot so we can track weight/measurements over time.
+ * One document per user (updated on profile changes or re-onboarding).
  * Weight stored in kg, height in cm; display units kept for UI.
  */
 const bodyDetailsSchema = new mongoose.Schema(

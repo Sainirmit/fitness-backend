@@ -43,6 +43,49 @@ const bodyPhotosSchema = new mongoose.Schema(
       lowercase: true,
       default: '',
     },
+
+    // ── Photo-based refinement analysis fields ──
+    analysisStatus: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      enum: ['pending', 'processing', 'completed', 'failed'],
+      default: null,
+    },
+    analysisVersion: {
+      type: Number,
+      default: 0,
+    },
+    analysisSummary: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+    analysisRaw: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+    analysisError: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    // Machine-readable code for the frontend to key on.
+    // 'INVALID_PHOTOS' | 'LOW_CONFIDENCE' | 'SCHEMA_ERROR' | 'INTERNAL_ERROR'
+    analysisErrorCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: null,
+    },
+    // Structured detail payload for the frontend (e.g. which quality checks failed).
+    analysisErrorDetails: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+    analysisCompletedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

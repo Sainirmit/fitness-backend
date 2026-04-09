@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 /**
  * User model – holds auth + onboarding preferences (MyTrainr AI).
@@ -34,7 +34,7 @@ const userSchema = new mongoose.Schema(
     name: {
       type: String,
       trim: true,
-      default: '',
+      default: "",
     },
     fitnessGoals: {
       type: [String],
@@ -44,7 +44,7 @@ const userSchema = new mongoose.Schema(
     fitnessLevel: {
       type: String,
       trim: true,
-      default: '',
+      default: "",
       // e.g. "beginner" | "intermediate" | "advanced"
     },
     motivations: {
@@ -57,18 +57,13 @@ const userSchema = new mongoose.Schema(
     workoutEnvironment: {
       type: String,
       trim: true,
-      default: '',
+      default: "",
       // "gym" | "home"
     },
     weightliftingExperience: {
       type: Boolean,
       default: null,
       // Only when workoutEnvironment === "gym"
-    },
-    homeEquipment: {
-      type: [String],
-      default: [],
-      // When "home": normalized from free text, e.g. ["dumbbells", "resistance_bands"]
     },
 
     // --- Workout frequency & focus ---
@@ -80,14 +75,14 @@ const userSchema = new mongoose.Schema(
     preferredWorkoutTime: {
       type: String,
       trim: true,
-      default: '',
+      default: "",
       // e.g. "morning" | "afternoon" | "evening" | "night"
     },
-    activityLevel: {
+    activityLevelApartFromWorkout: {
       type: String,
       trim: true,
-      default: '',
-      // e.g. "none" | "light" | "moderate" | "very_active"
+      default: "",
+      // Daily activity outside workouts — e.g. "none" | "light" | "moderate" | "very_active"
     },
     focusAreas: {
       type: [String],
@@ -99,7 +94,7 @@ const userSchema = new mongoose.Schema(
     dietType: {
       type: String,
       trim: true,
-      default: '',
+      default: "",
       // e.g. "non_vegetarian" | "vegetarian_with_eggs" | "vegan"
     },
     mealsPerDay: {
@@ -120,21 +115,38 @@ const userSchema = new mongoose.Schema(
       default: false,
       // Set after successful paywall / subscription
     },
+    hasBodyPhotos: {
+      type: Boolean,
+      default: false,
+      // True once user uploads at least one front+side photo set
+    },
     currentWorkoutPlan: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'WorkoutPlan',
+      ref: "WorkoutPlan",
       default: null,
       // Optional: Quick reference to user's active workout plan
+    },
+    timeZone: {
+      type: String,
+      trim: true,
+      default: "UTC",
+      // IANA timezone, e.g. "America/New_York"
     },
   },
   {
     timestamps: true,
-    toJSON: { virtuals: false, transform: (_, ret) => { delete ret.__v; return ret; } },
+    toJSON: {
+      virtuals: false,
+      transform: (_, ret) => {
+        delete ret.__v;
+        return ret;
+      },
+    },
     toObject: { virtuals: false },
-  }
+  },
 );
 
 // Index for auth lookups
 userSchema.index({ email: 1, provider: 1 }, { unique: true });
 
-export default mongoose.model('User', userSchema);
+export default mongoose.model("User", userSchema);

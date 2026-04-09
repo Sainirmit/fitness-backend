@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 /**
  * WorkoutSession – One instance of a user performing a workout (a specific WorkoutDay).
@@ -8,29 +8,46 @@ const workoutSessionSchema = new mongoose.Schema(
   {
     user: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
       index: true,
     },
     workoutDay: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'WorkoutDay',
+      ref: "WorkoutDay",
       required: true,
       index: true,
     },
     workoutPlan: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'WorkoutPlan',
+      ref: "WorkoutPlan",
       index: true,
       // Denormalized for queries
+    },
+    workoutDayOccurrence: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "WorkoutDayOccurrence",
+      default: null,
+      index: true,
+    },
+    /** Local calendar date (YYYY-MM-DD) this session is for */
+    scheduledDateKey: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    timeZone: {
+      type: String,
+      trim: true,
+      default: "",
     },
     status: {
       type: String,
       trim: true,
       lowercase: true,
       required: true,
-      enum: ['in_progress', 'completed', 'discarded'],
-      default: 'in_progress',
+      enum: ["in_progress", "completed", "discarded"],
+      default: "in_progress",
       // 'in_progress' | 'completed' | 'discarded'
     },
     startedAt: {
@@ -54,7 +71,7 @@ const workoutSessionSchema = new mongoose.Schema(
       type: String,
       trim: true,
       lowercase: true,
-      enum: ['light', 'moderate', 'difficult'],
+      enum: ["light", "moderate", "difficult"],
       default: null,
       // 'light' | 'moderate' | 'difficult'
     },
@@ -68,15 +85,20 @@ const workoutSessionSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    toJSON: { virtuals: false, transform: (_, ret) => { delete ret.__v; return ret; } },
+    toJSON: {
+      virtuals: false,
+      transform: (_, ret) => {
+        delete ret.__v;
+        return ret;
+      },
+    },
     toObject: { virtuals: false },
-  }
+  },
 );
 
 // Indexes for efficient queries
 workoutSessionSchema.index({ user: 1, startedAt: -1 });
-workoutSessionSchema.index({ workoutDay: 1 });
 workoutSessionSchema.index({ status: 1 });
 workoutSessionSchema.index({ user: 1, status: 1 });
 
-export default mongoose.model('WorkoutSession', workoutSessionSchema);
+export default mongoose.model("WorkoutSession", workoutSessionSchema);

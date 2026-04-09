@@ -8,6 +8,13 @@ import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import bodyDetailsRoutes from "./routes/bodyDetailsRoutes.js";
 import bodyPhotosRoutes from "./routes/bodyPhotosRoutes.js";
+import workoutPlanRoutes from "./routes/workoutPlanRoutes.js";
+import workoutSessionRoutes from "./routes/workoutSessionRoutes.js";
+import homeRoutes from "./routes/homeRoutes.js";
+import {
+  markMissedPastDueForAllUsers,
+  markMissedCalendarDaysForAllUsers,
+} from "./services/workoutOccurrenceService.js";
 
 dotenv.config();
 
@@ -18,23 +25,54 @@ const PORT = process.env.PORT;
 app.use(helmet());
 app.use(cors());
 app.use(morgan("dev"));
-app.use((req, res, next) => {
-  // Log only API hits (avoid noise from static assets, health checks, etc.)
-  if (req.originalUrl?.startsWith("/api")) {
-    const startedAt = process.hrtime.bigint();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-    res.on("finish", () => {
-      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
-      console.log(
-        `[API HIT] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${durationMs.toFixed(1)}ms)`
-      );
-    });
+const shouldLogApiPayloads =
+  process.env.NODE_ENV !== "production" || process.env.API_REQUEST_LOG === "1";
+
+function redactForLog(value, depth = 0) {
+  if (depth > 6) return "[MaxDepth]";
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) return value.map((v) => redactForLog(v, depth + 1));
+  if (typeof value !== "object") return value;
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (/password|secret|token|authorization|refreshToken|accessToken/i.test(k)) {
+      out[k] = typeof v === "string" && v.length ? "[REDACTED]" : v;
+    } else {
+      out[k] = redactForLog(v, depth + 1);
+    }
   }
+  return out;
+}
+
+app.use((req, res, next) => {
+  if (!req.originalUrl?.startsWith("/api") || !shouldLogApiPayloads) {
+    return next();
+  }
+
+  const startedAt = process.hrtime.bigint();
+
+  const queryKeys = Object.keys(req.query ?? {});
+  const bodyKeys = Object.keys(req.body ?? {});
+
+  console.log("[API REQUEST]", {
+    method: req.method,
+    url: req.originalUrl,
+    ...(queryKeys.length ? { query: req.query } : {}),
+    ...(bodyKeys.length ? { body: redactForLog(req.body) } : {}),
+  });
+
+  res.on("finish", () => {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    console.log(
+      `[API RESPONSE] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${durationMs.toFixed(1)}ms)`,
+    );
+  });
 
   next();
 });
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 // Serve static files for testing
 app.use(express.static("public"));
@@ -54,6 +92,19 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/body-details", bodyDetailsRoutes);
 app.use("/api/body-photos", bodyPhotosRoutes);
+app.use("/api/workout-plans", workoutPlanRoutes);
+app.use("/api/workout-sessions", workoutSessionRoutes);
+app.use("/api/home", homeRoutes);
+
+const MISSED_CHECK_MS = 15 * 60 * 1000;
+setInterval(() => {
+  markMissedPastDueForAllUsers().catch((e) =>
+    console.error("[markMissedPastDue:occurrence]", e?.message || e),
+  );
+  markMissedCalendarDaysForAllUsers().catch((e) =>
+    console.error("[markMissedPastDue:calendar]", e?.message || e),
+  );
+}, MISSED_CHECK_MS);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
