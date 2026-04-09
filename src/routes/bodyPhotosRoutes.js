@@ -1,5 +1,6 @@
 import express from 'express';
 import { protect } from '../middleware/auth.js';
+import { photoUploadLimiter } from '../middleware/rateLimit.js';
 import {
   create,
   list,
@@ -12,17 +13,12 @@ import {
 
 const router = express.Router();
 
-// All routes require authentication
 router.use(protect);
 
-// Get upload signed URL (for direct upload to S3, then POST / with public URLs)
-router.get('/upload-url', getUploadUrl);
-
-// Get access signed URL (for viewing images)
+router.get('/upload-url', photoUploadLimiter, getUploadUrl);
 router.get('/access-url/:photoId', getAccessUrl);
 
-// CRUD operations
-router.post('/', create);
+router.post('/', photoUploadLimiter, create);
 router.get('/', list);
 router.get('/:id', getById);
 router.patch('/:id', update);

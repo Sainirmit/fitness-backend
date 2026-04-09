@@ -120,8 +120,6 @@ async function runCalendarGeneration(user, placeholderPlanId, todayDateKey, time
   try {
     const result = await generateCalendarWorkoutPlan(user, todayDateKey, timeZone);
 
-    // The generation service created its own plan doc — remove the placeholder
-    // and point user.currentWorkoutPlan to the real one (already done in service).
     await WorkoutPlan.findByIdAndDelete(placeholderPlanId);
 
     console.log("[WorkoutGen:Calendar] background job complete", {
@@ -130,7 +128,10 @@ async function runCalendarGeneration(user, placeholderPlanId, todayDateKey, time
   } catch (err) {
     console.error("[WorkoutGen:Calendar] background job failed", err?.message || err);
     await WorkoutPlan.findByIdAndUpdate(placeholderPlanId, {
-      $set: { status: "failed", generationError: err?.message || "Unknown error" },
+      $set: {
+        status: "failed",
+        generationError: "Plan generation failed. Please try again later.",
+      },
     });
   }
 }
@@ -158,7 +159,8 @@ export const getGenerationStatus = async (req, res, next) => {
     if (placeholder && placeholder.status === "failed") {
       return res.status(200).json({
         status: "failed",
-        error: placeholder.generationError,
+        code: "GENERATION_FAILED",
+        error: placeholder.generationError || "Plan generation failed.",
       });
     }
 

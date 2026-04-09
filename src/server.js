@@ -4,6 +4,9 @@ import helmet from "helmet";
 import morgan from "morgan";
 import dotenv from "dotenv";
 import { connectDB, disconnectDB } from "./config/database.js";
+import { disconnectRedis } from "./config/redis.js";
+import { globalApiLimiter } from "./middleware/rateLimit.js";
+import { generateRequestId, formatErrorResponse } from "./utils/apiError.js";
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import bodyDetailsRoutes from "./routes/bodyDetailsRoutes.js";
@@ -21,12 +24,26 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT;
 
+// Trust first proxy (load balancer / reverse proxy) for correct req.ip
+if (process.env.TRUST_PROXY) {
+  app.set("trust proxy", Number(process.env.TRUST_PROXY) || 1);
+}
+
 // Middleware
 app.use(helmet());
 app.use(cors());
 app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Attach a unique request ID for tracing
+app.use((req, _res, next) => {
+  req.requestId = generateRequestId();
+  next();
+});
+
+// Global API rate limiter (applied before route mounts)
+app.use(globalApiLimiter);
 
 const shouldLogApiPayloads =
   process.env.NODE_ENV !== "production" || process.env.API_REQUEST_LOG === "1";
@@ -106,37 +123,27 @@ setInterval(() => {
   );
 }, MISSED_CHECK_MS);
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
+// Error handling middleware — standardized envelope, no internal leakage
+app.use((err, req, res, _next) => {
+  const requestId = req.requestId || generateRequestId();
+  const status = err.status || (err.name === "ValidationError" ? 400 : err.name === "CastError" ? 400 : err.code === 11000 ? 409 : 500);
 
-  // Mongoose validation error (e.g. field out of range)
-  if (err.name === "ValidationError") {
-    const messages = Object.values(err.errors).map((e) => e.message);
-    return res.status(400).json({ message: messages.join(", ") });
+  if (status >= 500) {
+    console.error(`[ERROR] ${requestId}`, err.stack || err.message || err);
   }
 
-  // Mongoose CastError (e.g. invalid ObjectId)
-  if (err.name === "CastError") {
-    return res
-      .status(400)
-      .json({ message: `Invalid value for field: ${err.path}` });
-  }
-
-  // MongoDB duplicate key
-  if (err.code === 11000) {
-    const field = Object.keys(err.keyValue ?? {})[0] ?? "field";
-    return res.status(409).json({ message: `${field} is already in use.` });
-  }
-
-  res
-    .status(err.status || 500)
-    .json({ message: err.message || "Something went wrong!" });
+  const body = formatErrorResponse(err, requestId);
+  return res.status(status).json(body);
 });
 
 // 404 handler
 app.use((req, res) => {
-  res.status(404).json({ message: "Route not found" });
+  res.status(404).json({
+    code: "NOT_FOUND",
+    message: "Route not found",
+    retryable: false,
+    requestId: req.requestId,
+  });
 });
 
 // Start server
@@ -156,13 +163,13 @@ const startServer = async () => {
 // Graceful shutdown
 process.on("SIGINT", async () => {
   console.log("Received SIGINT. Shutting down gracefully...");
-  await disconnectDB();
+  await Promise.all([disconnectDB(), disconnectRedis()]);
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
   console.log("Received SIGTERM. Shutting down gracefully...");
-  await disconnectDB();
+  await Promise.all([disconnectDB(), disconnectRedis()]);
   process.exit(0);
 });
 

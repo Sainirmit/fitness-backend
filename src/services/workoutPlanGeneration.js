@@ -8,6 +8,7 @@
  */
 
 import mongoose from "mongoose";
+import { ensureMongoConnected } from "../config/database.js";
 import openai, { CHAT_MODEL } from "../config/openai.js";
 import { deriveCatalogKey } from "./catalogKey.js";
 import { loadCatalogExercises } from "./catalogExercises.js";
@@ -705,6 +706,8 @@ async function callLlmAndPersist({
     weightKg: bodyDetails.weight,
     heightCm: bodyDetails.height,
   };
+
+  await ensureMongoConnected();
 
   const workoutPlan = await persistCalendarPlan(
     user._id,

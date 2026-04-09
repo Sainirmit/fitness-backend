@@ -12,7 +12,9 @@ export const protect = async (req, res, next) => {
 
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({
+      code: 'UNAUTHORIZED',
       message: 'Authorization header missing or malformed. Expected: Bearer <token>',
+      retryable: false,
     });
   }
 
@@ -22,12 +24,20 @@ export const protect = async (req, res, next) => {
   try {
     decoded = verifyToken(token);
   } catch {
-    return res.status(401).json({ message: 'Access token is invalid or has expired.' });
+    return res.status(401).json({
+      code: 'TOKEN_EXPIRED',
+      message: 'Access token is invalid or has expired.',
+      retryable: false,
+    });
   }
 
   const user = await User.findById(decoded.sub);
   if (!user) {
-    return res.status(401).json({ message: 'User belonging to this token no longer exists.' });
+    return res.status(401).json({
+      code: 'USER_NOT_FOUND',
+      message: 'User belonging to this token no longer exists.',
+      retryable: false,
+    });
   }
 
   req.user = user;

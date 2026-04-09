@@ -9,6 +9,7 @@ import {
   getUploadSignedUrl,
 } from "../config/s3.js";
 import { enqueueRefinement } from "../services/photoRefinementOrchestrator.js";
+import { checkRefinementEligibility } from "../middleware/refinementGuard.js";
 
 async function resolveBodyDetailsIdForUser(userId, bodyDetailsId) {
   if (bodyDetailsId) {
@@ -29,7 +30,7 @@ async function resolveBodyDetailsIdForUser(userId, bodyDetailsId) {
  * POST /api/body-photos
  * Protected: requires valid JWT
  */
-export const create = async (req, res) => {
+export const create = async (req, res, next) => {
   try {
     const { frontImageUrl, sideImageUrl, bodyDetailsId, periodType } = req.body;
     const userId = req.user._id;
@@ -48,6 +49,16 @@ export const create = async (req, res) => {
     if (bodyDetailsId && !resolvedBodyDetailsId) {
       return res.status(400).json({
         message: "bodyDetailsId is invalid (or does not belong to this user)",
+      });
+    }
+
+    const eligibility = await checkRefinementEligibility(userId);
+    if (!eligibility.eligible) {
+      return res.status(409).json({
+        code: eligibility.code,
+        message: eligibility.reason,
+        retryAfter: eligibility.retryAfter || null,
+        retryable: false,
       });
     }
 
@@ -70,11 +81,7 @@ export const create = async (req, res) => {
       refinementStatus: "queued",
     });
   } catch (error) {
-    console.error("Create body photos error:", error);
-    res.status(500).json({
-      message: "Failed to create body photos",
-      error: error.message,
-    });
+    next(error);
   }
 };
 
@@ -83,7 +90,7 @@ export const create = async (req, res) => {
  * GET /api/body-photos
  * Protected: requires valid JWT
  */
-export const list = async (req, res) => {
+export const list = async (req, res, next) => {
   try {
     const userId = req.user._id;
     const { limit = 20, page = 1, periodType } = req.query;
@@ -132,11 +139,7 @@ export const list = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("List body photos error:", error);
-    res.status(500).json({
-      message: "Failed to list body photos",
-      error: error.message,
-    });
+    next(error);
   }
 };
 
@@ -145,7 +148,7 @@ export const list = async (req, res) => {
  * GET /api/body-photos/:id
  * Protected: requires valid JWT
  */
-export const getById = async (req, res) => {
+export const getById = async (req, res, next) => {
   try {
     const { id } = req.params;
     const userId = req.user._id;
@@ -182,11 +185,7 @@ export const getById = async (req, res) => {
       bodyPhotos: responseBodyPhotos,
     });
   } catch (error) {
-    console.error("Get body photos error:", error);
-    res.status(500).json({
-      message: "Failed to get body photos",
-      error: error.message,
-    });
+    next(error);
   }
 };
 
@@ -195,7 +194,7 @@ export const getById = async (req, res) => {
  * PATCH /api/body-photos/:id
  * Protected: requires valid JWT
  */
-export const update = async (req, res) => {
+export const update = async (req, res, next) => {
   try {
     const { id } = req.params;
     const userId = req.user._id;
@@ -221,11 +220,7 @@ export const update = async (req, res) => {
       bodyPhotos,
     });
   } catch (error) {
-    console.error("Update body photos error:", error);
-    res.status(500).json({
-      message: "Failed to update body photos",
-      error: error.message,
-    });
+    next(error);
   }
 };
 
@@ -234,7 +229,7 @@ export const update = async (req, res) => {
  * DELETE /api/body-photos/:id
  * Protected: requires valid JWT
  */
-export const remove = async (req, res) => {
+export const remove = async (req, res, next) => {
   try {
     const { id } = req.params;
     const userId = req.user._id;
@@ -268,11 +263,7 @@ export const remove = async (req, res) => {
       message: "Body photos deleted successfully",
     });
   } catch (error) {
-    console.error("Delete body photos error:", error);
-    res.status(500).json({
-      message: "Failed to delete body photos",
-      error: error.message,
-    });
+    next(error);
   }
 };
 
@@ -281,7 +272,7 @@ export const remove = async (req, res) => {
  * GET /api/body-photos/upload-url
  * Protected: requires valid JWT
  */
-export const getUploadUrl = async (req, res) => {
+export const getUploadUrl = async (req, res, next) => {
   try {
     const { fileName, contentType, imageType } = req.query;
     const userId = req.user._id;
@@ -307,11 +298,7 @@ export const getUploadUrl = async (req, res) => {
       publicUrl: `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${finalFileName}`,
     });
   } catch (error) {
-    console.error("Get upload URL error:", error);
-    res.status(500).json({
-      message: "Failed to generate upload URL",
-      error: error.message,
-    });
+    next(error);
   }
 };
 
@@ -320,7 +307,7 @@ export const getUploadUrl = async (req, res) => {
  * GET /api/body-photos/access-url/:photoId
  * Protected: requires valid JWT
  */
-export const getAccessUrl = async (req, res) => {
+export const getAccessUrl = async (req, res, next) => {
   try {
     const { photoId } = req.params;
     const userId = req.user._id;
@@ -358,10 +345,6 @@ export const getAccessUrl = async (req, res) => {
       imageType,
     });
   } catch (error) {
-    console.error("Get access URL error:", error);
-    res.status(500).json({
-      message: "Failed to generate access URL",
-      error: error.message,
-    });
+    next(error);
   }
 };
