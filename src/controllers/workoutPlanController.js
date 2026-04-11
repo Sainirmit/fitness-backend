@@ -2,14 +2,20 @@ import WorkoutPlan from "../models/WorkoutPlan.js";
 import WorkoutDay from "../models/WorkoutDay.js";
 import WorkoutDayExercise from "../models/WorkoutDayExercise.js";
 import BodyPhotos from "../models/BodyPhotos.js";
-import { generateCalendarWorkoutPlan } from "../services/workoutPlanGeneration.js";
+import { workoutGenQueue } from "../queues/workoutGenQueue.js";
 import {
   ensureOccurrences,
   listOccurrencesInRange,
   resetTemplateStatusesForActivePlan,
 } from "../services/workoutOccurrenceService.js";
-import { resolveTimeZone, syncUserTimeZoneFromHeader } from "../utils/timezone.js";
-import { weekKeysForDate, dateKeyInTimeZone } from "../services/homeDashboardService.js";
+import {
+  resolveTimeZone,
+  syncUserTimeZoneFromHeader,
+} from "../utils/timezone.js";
+import {
+  weekKeysForDate,
+  dateKeyInTimeZone,
+} from "../services/homeDashboardService.js";
 
 const WEEKDAY_ORDER = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
@@ -30,7 +36,11 @@ function weekdayInTimeZone(date, timeZone) {
  */
 function buildAutoOccurrenceSlots(days, workoutDays, timeZone) {
   const normalizedWorkoutDays = (workoutDays || [])
-    .map((d) => String(d || "").toLowerCase().trim())
+    .map((d) =>
+      String(d || "")
+        .toLowerCase()
+        .trim(),
+    )
     .filter((d) => WEEKDAY_ORDER.includes(d));
   const allowed = new Set(normalizedWorkoutDays);
   if (!days?.length || allowed.size === 0) return [];
@@ -95,20 +105,6 @@ export const generate = async (req, res, next) => {
       generatedAt: { $lt: staleCutoff },
     });
 
-    const alreadyGenerating = await WorkoutPlan.findOne({
-      user: user._id,
-      status: "generating",
-    })
-      .select("_id")
-      .lean();
-    if (alreadyGenerating) {
-      return res.status(202).json({
-        message: "Plan generation already in progress. Poll generation-status for progress.",
-        workoutPlanId: alreadyGenerating._id,
-        status: "generating",
-      });
-    }
-
     await WorkoutPlan.updateMany(
       { user: user._id, status: "active" },
       { $set: { status: "archived" } },
@@ -125,8 +121,17 @@ export const generate = async (req, res, next) => {
       generatedAt: new Date(),
     });
 
-    // Fire-and-forget: run LLM in background, update plan when done
-    runCalendarGeneration(user, placeholderPlan._id, todayDateKey, timeZone);
+    const jobId = `workout-gen:${user._id}`;
+    await workoutGenQueue.add(
+      "calendar",
+      {
+        userId: String(user._id),
+        placeholderPlanId: String(placeholderPlan._id),
+        todayDateKey,
+        timeZone,
+      },
+      { jobId },
+    );
 
     return res.status(202).json({
       message: "Plan generation started. Poll generation-status for progress.",
@@ -137,26 +142,6 @@ export const generate = async (req, res, next) => {
     next(err);
   }
 };
-
-async function runCalendarGeneration(user, placeholderPlanId, todayDateKey, timeZone) {
-  try {
-    const result = await generateCalendarWorkoutPlan(user, todayDateKey, timeZone);
-
-    await WorkoutPlan.findByIdAndDelete(placeholderPlanId);
-
-    console.log("[WorkoutGen:Calendar] background job complete", {
-      realPlanId: result.workoutPlan._id?.toString(),
-    });
-  } catch (err) {
-    console.error("[WorkoutGen:Calendar] background job failed", err?.message || err);
-    await WorkoutPlan.findByIdAndUpdate(placeholderPlanId, {
-      $set: {
-        status: "failed",
-        generationError: "Plan generation failed. Please try again later.",
-      },
-    });
-  }
-}
 
 /**
  * GET /api/workout-plans/generation-status/:planId
@@ -233,7 +218,8 @@ export const getCurrent = async (req, res, next) => {
       }).lean();
       if (generating) {
         return res.status(202).json({
-          message: "Your plan is being generated. Poll generation-status for progress.",
+          message:
+            "Your plan is being generated. Poll generation-status for progress.",
           workoutPlanId: generating._id,
           status: "generating",
         });

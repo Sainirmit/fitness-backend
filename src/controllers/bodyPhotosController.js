@@ -73,7 +73,7 @@ export const create = async (req, res, next) => {
     });
 
     await User.findByIdAndUpdate(userId, { $set: { hasBodyPhotos: true } });
-    enqueueRefinement(userId, bodyPhotos._id);
+    await enqueueRefinement(userId, bodyPhotos._id);
 
     res.status(201).json({
       message: "Body photos created successfully",

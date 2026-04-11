@@ -7,12 +7,13 @@
  * On failure the current active plan is left untouched.
  */
 
-import { analyzeBodyPhotos } from './bodyPhotoAnalysis.js';
-import { generateRefinedWorkoutPlan } from './workoutPlanGeneration.js';
-import BodyPhotos from '../models/BodyPhotos.js';
-import WorkoutPlan from '../models/WorkoutPlan.js';
-import User from '../models/User.js';
-import { getAccessSignedUrl, extractS3KeyFromUrl } from '../config/s3.js';
+import { analyzeBodyPhotos } from "./bodyPhotoAnalysis.js";
+import { generateRefinedWorkoutPlan } from "./workoutPlanGeneration.js";
+import BodyPhotos from "../models/BodyPhotos.js";
+import WorkoutPlan from "../models/WorkoutPlan.js";
+import User from "../models/User.js";
+import { getAccessSignedUrl, extractS3KeyFromUrl } from "../config/s3.js";
+import { refinementQueue } from "../queues/workoutGenQueue.js";
 
 /**
  * Run the full photo-refinement pipeline.
@@ -23,18 +24,18 @@ import { getAccessSignedUrl, extractS3KeyFromUrl } from '../config/s3.js';
  */
 export async function runPhotoRefinement(userId, bodyPhotosId) {
   const logCtx = { userId: String(userId), bodyPhotosId: String(bodyPhotosId) };
-  console.log('[PhotoRefinement] start', logCtx);
+  console.log("[PhotoRefinement] start", logCtx);
 
   // Atomically claim the job — prevents duplicate concurrent runs.
   const photos = await BodyPhotos.findOneAndUpdate(
-    { _id: bodyPhotosId, user: userId, analysisStatus: { $ne: 'processing' } },
-    { $set: { analysisStatus: 'processing', analysisError: null } },
+    { _id: bodyPhotosId, user: userId, analysisStatus: { $ne: "processing" } },
+    { $set: { analysisStatus: "processing", analysisError: null } },
     { new: true },
   );
 
   if (!photos) {
     throw Object.assign(
-      new Error('Body photos not found or already being processed'),
+      new Error("Body photos not found or already being processed"),
       { status: 409 },
     );
   }
@@ -45,7 +46,10 @@ export async function runPhotoRefinement(userId, bodyPhotosId) {
     const sideKey = extractS3KeyFromUrl(photos.sideImageUrl);
 
     if (!frontKey || !sideKey) {
-      throw Object.assign(new Error('Missing image URLs on BodyPhotos document'), { status: 400 });
+      throw Object.assign(
+        new Error("Missing image URLs on BodyPhotos document"),
+        { status: 400 },
+      );
     }
 
     const [frontSignedUrl, sideSignedUrl] = await Promise.all([
@@ -59,7 +63,7 @@ export async function runPhotoRefinement(userId, bodyPhotosId) {
     // Persist analysis (IDs only — no raw image URLs logged).
     await BodyPhotos.findByIdAndUpdate(bodyPhotosId, {
       $set: {
-        analysisStatus: 'completed',
+        analysisStatus: "completed",
         analysisSummary: {
           posture: analysis.posture,
           muscleBalance: analysis.muscleBalance,
@@ -76,22 +80,25 @@ export async function runPhotoRefinement(userId, bodyPhotosId) {
       $inc: { analysisVersion: 1 },
     });
 
-    console.log('[PhotoRefinement] stage 1 complete — analysis persisted', logCtx);
+    console.log(
+      "[PhotoRefinement] stage 1 complete — analysis persisted",
+      logCtx,
+    );
 
     // ── Stage 2: Refined plan generation ──
     const user = await User.findById(userId);
     if (!user) {
-      throw Object.assign(new Error('User not found'), { status: 404 });
+      throw Object.assign(new Error("User not found"), { status: 404 });
     }
 
     const currentPlan = await WorkoutPlan.findOne({
       user: userId,
-      status: 'active',
+      status: "active",
     }).sort({ generatedAt: -1 });
 
     if (!currentPlan) {
       console.log(
-        '[PhotoRefinement] no active plan — creating first plan from photo analysis',
+        "[PhotoRefinement] no active plan — creating first plan from photo analysis",
         logCtx,
       );
     }
@@ -103,7 +110,7 @@ export async function runPhotoRefinement(userId, bodyPhotosId) {
       bodyPhotosId,
     );
 
-    console.log('[PhotoRefinement] completed', {
+    console.log("[PhotoRefinement] completed", {
       ...logCtx,
       newPlanId: result.workoutPlan._id?.toString(),
     });
@@ -112,19 +119,19 @@ export async function runPhotoRefinement(userId, bodyPhotosId) {
   } catch (err) {
     // Mark analysis as failed — active plan stays untouched (archive only happens
     // inside the plan-creation transaction on success).
-    const errorCode = err.errorCode || 'INTERNAL_ERROR';
+    const errorCode = err.errorCode || "INTERNAL_ERROR";
     const errorDetails = err.errorDetails || null;
 
     await BodyPhotos.findByIdAndUpdate(bodyPhotosId, {
       $set: {
-        analysisStatus: 'failed',
-        analysisError: err.message || 'Unknown error',
+        analysisStatus: "failed",
+        analysisError: err.message || "Unknown error",
         analysisErrorCode: errorCode,
         ...(errorDetails ? { analysisErrorDetails: errorDetails } : {}),
       },
     });
 
-    console.error('[PhotoRefinement] failed', {
+    console.error("[PhotoRefinement] failed", {
       ...logCtx,
       errorCode,
       error: err.message,
@@ -134,15 +141,12 @@ export async function runPhotoRefinement(userId, bodyPhotosId) {
 }
 
 /**
- * Fire-and-forget wrapper used by the upload controller.
- * Errors are logged but never propagated to the HTTP response.
+ * Enqueue a photo-refinement job via BullMQ.
+ * The worker picks it up, retries on failure, and logs errors.
  */
-export function enqueueRefinement(userId, bodyPhotosId) {
-  runPhotoRefinement(userId, bodyPhotosId).catch((err) => {
-    console.error('[PhotoRefinement] background job failed', {
-      userId: String(userId),
-      bodyPhotosId: String(bodyPhotosId),
-      error: err.message,
-    });
+export async function enqueueRefinement(userId, bodyPhotosId) {
+  await refinementQueue.add("refine", {
+    userId: String(userId),
+    bodyPhotosId: String(bodyPhotosId),
   });
 }

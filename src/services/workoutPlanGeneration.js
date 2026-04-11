@@ -666,7 +666,8 @@ async function persistCalendarPlan(
       );
     } catch (err) {
       lastErr = err;
-      const retry = isRetryableTransactionError(err) && attempt < PERSIST_TX_MAX_ATTEMPTS;
+      const retry =
+        isRetryableTransactionError(err) && attempt < PERSIST_TX_MAX_ATTEMPTS;
       if (!retry) throw err;
       const delayMs = 120 * 2 ** (attempt - 1);
       console.warn("[WorkoutGen] persist transaction retry", {

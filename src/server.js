@@ -18,11 +18,18 @@ import {
   markMissedPastDueForAllUsers,
   markMissedCalendarDaysForAllUsers,
 } from "./services/workoutOccurrenceService.js";
+import { closeQueues } from "./queues/workoutGenQueue.js";
+import { startWorkoutGenWorker, closeWorkoutGenWorker } from "./workers/workoutGenWorker.js";
+import { startRefinementWorker, closeRefinementWorker } from "./workers/refinementWorker.js";
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 3000;
+
+// Dynamic JSON APIs: default weak ETags make identical poll bodies (e.g.
+// { status: "generating" }) return 304; clients often keep cached state.
+app.set("etag", false);
 
 // Trust first proxy (load balancer / reverse proxy) for correct req.ip
 if (process.env.TRUST_PROXY) {
@@ -150,6 +157,10 @@ app.use((req, res) => {
 const startServer = async () => {
   try {
     await connectDB();
+
+    startWorkoutGenWorker();
+    startRefinementWorker();
+
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
@@ -161,15 +172,24 @@ const startServer = async () => {
 };
 
 // Graceful shutdown
+async function shutdownAll() {
+  await Promise.all([
+    closeWorkoutGenWorker(),
+    closeRefinementWorker(),
+    closeQueues(),
+  ]);
+  await Promise.all([disconnectDB(), disconnectRedis()]);
+}
+
 process.on("SIGINT", async () => {
   console.log("Received SIGINT. Shutting down gracefully...");
-  await Promise.all([disconnectDB(), disconnectRedis()]);
+  await shutdownAll();
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
   console.log("Received SIGTERM. Shutting down gracefully...");
-  await Promise.all([disconnectDB(), disconnectRedis()]);
+  await shutdownAll();
   process.exit(0);
 });
 
