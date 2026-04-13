@@ -1,5 +1,5 @@
 /**
- * Async orchestrator for the two-stage body-photo refinement pipeline.
+ * Photo-refinement pipeline (invoked by the BullMQ photo-refinement worker).
  *
  * Stage 1: Vision LLM analyzes front + side photos → structured profile.
  * Stage 2: Workout LLM builds a plan from onboarding + photo profile (archives any existing active plan).
@@ -34,8 +34,25 @@ export async function runPhotoRefinement(userId, bodyPhotosId) {
   );
 
   if (!photos) {
+    const existing = await BodyPhotos.findOne({
+      _id: bodyPhotosId,
+      user: userId,
+    }).lean();
+    if (!existing) {
+      throw Object.assign(new Error("Body photos not found"), { status: 404 });
+    }
+    if (
+      existing.analysisStatus === "processing" ||
+      existing.analysisStatus === "completed"
+    ) {
+      console.log("[PhotoRefinement] skip duplicate/in-flight", {
+        ...logCtx,
+        analysisStatus: existing.analysisStatus,
+      });
+      return { skipped: true, analysisStatus: existing.analysisStatus };
+    }
     throw Object.assign(
-      new Error("Body photos not found or already being processed"),
+      new Error("Body photos could not be claimed for processing"),
       { status: 409 },
     );
   }
@@ -117,6 +134,8 @@ export async function runPhotoRefinement(userId, bodyPhotosId) {
 
     return { analysis, plan: result };
   } catch (err) {
+    if (err.status === 409) throw err;
+
     // Mark analysis as failed — active plan stays untouched (archive only happens
     // inside the plan-creation transaction on success).
     const errorCode = err.errorCode || "INTERNAL_ERROR";

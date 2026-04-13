@@ -3,6 +3,7 @@ import { protect } from '../middleware/auth.js';
 import {
   start,
   complete,
+  patchFeedback,
   checkMissed,
   getDetail,
   upsertSet,
@@ -21,6 +22,7 @@ router.get('/:sessionId', getDetail);
 router.get('/:sessionId/progress', getProgress);
 router.put('/:sessionId/exercises/:sessionExerciseId/sets/:setNumber', upsertSet);
 router.post('/:sessionId/sets/batch', batchUpsertSets);
+router.patch('/:sessionId/feedback', patchFeedback);
 router.post('/:sessionId/complete', complete);
 
 export default router;

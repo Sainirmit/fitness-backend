@@ -21,14 +21,21 @@ async function processCalendarGeneration(job) {
     throw Object.assign(new Error("User not found"), { status: 404 });
   }
 
-  const result = await generateCalendarWorkoutPlan(user, todayDateKey, timeZone);
+  const result = await generateCalendarWorkoutPlan(
+    user,
+    todayDateKey,
+    timeZone,
+  );
 
   await WorkoutPlan.findByIdAndDelete(placeholderPlanId);
 
+  const workoutPlanId = String(result.workoutPlan._id);
   console.log("[WorkoutGen:Worker] completed", {
     jobId: job.id,
-    realPlanId: result.workoutPlan._id?.toString(),
+    realPlanId: workoutPlanId,
   });
+
+  return { workoutPlanId };
 }
 
 let worker = null;
@@ -56,7 +63,10 @@ export function startWorkoutGenWorker() {
           generationError: "Plan generation failed. Please try again later.",
         },
       }).catch((updateErr) =>
-        console.error("[WorkoutGen:Worker] failed to mark placeholder", updateErr?.message),
+        console.error(
+          "[WorkoutGen:Worker] failed to mark placeholder",
+          updateErr?.message,
+        ),
       );
     }
   });

@@ -70,7 +70,7 @@ export const authLimiter = rateLimit({
  */
 export const aiGenerationLimiter = rateLimit({
   windowMs: env("RATE_LIMIT_AI_GEN_WINDOW_MS", 60 * 60_000),
-  limit: env("RATE_LIMIT_AI_GEN_MAX", 5),
+  limit: env("RATE_LIMIT_AI_GEN_MAX", 50),
   standardHeaders: "draft-7",
   legacyHeaders: false,
   store: redisStore("ai-gen"),

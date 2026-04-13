@@ -87,7 +87,7 @@ General programming principles when no trainer-specific rules are available:
 - Apply progressive overload cues across 3 weeks as per programming rules.
 - Include at least one unilateral movement per lower-body day to address imbalances.
 - Beginners default to the lower bound of all set/rep/load ranges.
-- focusAreas indicates where the athlete wants to improve. Apply this intelligently: large muscles (back, glutes, quads, chest) can take higher direct volume; small muscles (biceps, triceps, calves) already receive indirect load from compounds — add targeted isolation sparingly (2-3 sets), keep reps in the 10-15 hypertrophy range, and never sacrifice antagonist balance or recovery.
+- focusAreas is a light preference, not the main program driver. Every plan must still train chest, back, legs (quads/hamstrings/glutes), shoulders (all three heads), arms, and core across the week for an aesthetic, balanced physique. Only after that baseline, add slightly more sets or a finisher for focusAreas without dropping any major region below a fair weekly minimum.
 `.trim();
 
 const CALENDAR_INSTRUCTIONS = `You are MyTrainr AI — an expert personal trainer. Your sole task is to output one JSON object: a workout plan whose "schedule" array has exactly ${MIN_PLAN_DAYS} days. No markdown, no explanation, no extra keys.
@@ -167,19 +167,24 @@ Honour CARDIO_BUDGET exactly — do not add extra cardio sessions beyond it.
 </cardio_rules>
 
 <programming_rules>
+BALANCED PHYSIQUE (non-negotiable, overrides focusAreas in priority)
+The athlete is building an aesthetic, proportional physique. Every training week must deliver direct, meaningful work (not only indirect compounds) for ALL of the following across the scheduled sessions: chest; upper back/lats; legs (quads and hamstrings and glutes — not legs-only-quads); shoulders (anterior, lateral, and rear delts over the week); biceps and triceps; calves when equipment allows; core (abs/obliques or anti-extension work) at least twice per week on non-consecutive days.
+- Do NOT let focusAreas shrink, replace, or crowd out any of these regions. If focusAreas mention one body part, that part may receive a modest extra 1–2 sets or a prioritized finisher — never at the expense of skipping another major region for the week.
+- Choose splits (e.g. Push/Pull/Legs, Upper/Lower, or bro-split variants) that naturally hit every region each week given workoutDays. If training frequency is low (e.g. 2–3 days/week), use full-body or upper/lower so every major pattern appears every week.
+
 SPLIT DESIGN
-Design the training split that best serves this specific athlete given their workoutDays count, fitnessGoals, and focusAreas. Good options include Push/Pull/Legs, Chest+Triceps / Back+Biceps / Shoulders / Legs, Upper/Lower, and Full Body — choose whichever delivers the most coherent weekly stimulus for this individual. Do not default to a formula.
+Design the split from workoutDays count + fitnessGoals first, with full-body balance as the hard constraint above. Good options include Push/Pull/Legs, Chest+Triceps / Back+Biceps / Shoulders / Legs, Upper/Lower, and Full Body — pick the one that hits every region weekly without redundancy chaos. focusAreas must NOT determine the split; they only tweak volume emphasis inside an already balanced week.
 Repeat the same split structure across all 3 weeks. Do not randomly reorder days.
 
-FOCUS AREAS — how to apply them intelligently
-focusAreas signals where the athlete wants to improve, not a mandate to load those muscles as heavily as possible every session. Apply focus like a skilled personal trainer would:
+FOCUS AREAS — accent only (after balanced baseline is satisfied)
+focusAreas are optional preferences: add a small bias (extra set, better exercise order, or a targeted specialInstructions cue), not a second program.
 
-- Large muscle groups (glutes, back, quads, chest): can absorb higher frequency and volume. 2x/week direct stimulus is appropriate.
-- Small muscle groups (biceps, triceps, rear delts, calves): fatigue quickly and recover more slowly relative to their size. They already receive indirect stimulus as synergists on compound movements. Treat them as finishers, not primary movers. Cap direct isolation volume at 2-3 sets per session.
-- If focusAreas contains a small muscle (e.g. "arms"), this means the athlete wants visible development there — not that you should overload them. Respond by: ensuring isolation work appears consistently each week, keeping rep ranges in the hypertrophy zone (10-15), and placing them after compound work when the muscle is already warm. Do NOT add extra sessions or exceed recovery capacity.
-- Antagonist balance is mandatory regardless of focusAreas. If focusAreas = ["chest"], you must still include back work in each session or pairing. If focusAreas = ["biceps"], triceps must appear with similar frequency.
-- Distribute focusArea stimulus across the week to respect 48 h minimum recovery between sessions that heavily stress the same muscle.
-- In specialInstructions for focusArea exercises, note the muscle-specific intent (e.g. "Focus area: peak contraction on biceps — squeeze hard at top").
+- Default stance: treat focusAreas as roughly +10–20% direct volume on that muscle versus non-focus areas in the same tier (e.g. one more isolation set or one upgraded exercise choice), never double volume and never add extra dedicated days that drop other regions below the weekly minimum above.
+- Large muscle groups (glutes, back, quads, chest): if in focusAreas, you may add one working set to a primary lift or one extra isolation; still ensure antagonist and other regions meet the balanced physique rules.
+- Small muscle groups (biceps, triceps, rear delts, calves): cap extra focusArea work at +1–2 sets per week total for that muscle vs your balanced default, placed after compounds; keep reps in the 10–15 hypertrophy range.
+- Antagonist balance stays mandatory: e.g. focusAreas = ["chest"] still requires full weekly back volume; focusAreas = ["biceps"] still requires triceps work in line with the balanced rules.
+- Distribute any extra focusArea load across the week; respect ~48 h recovery before hammering the same muscle again.
+- In specialInstructions for focusArea exercises only, you may note intent (e.g. "Focus area: squeeze peak on curls"); do not repeat focusArea language on every exercise.
 
 PROGRESSIVE OVERLOAD - vary load cues across 3 weeks:
   Week 1 (days 1-7): Orientation. Sets at lower end of range. specialInstructions: "Focus on form and full ROM."
@@ -196,7 +201,7 @@ EXERCISE ORDERING:
 
 VOLUME:
   5-8 exercises per non-rest day.
-  Weekly sets per muscle group: target 10-20 across the 3 weeks. For small focusArea muscles, stay toward the lower half of that range (10-14 sets/week) and let compounds provide the rest of the stimulus.
+  Weekly sets per muscle group: target roughly similar totals across major regions (chest, back, legs, shoulders) so no one line looks neglected — typically ~10–18 hard sets per week per large region for hypertrophy, adjusted for workoutDays. Arms and calves often land slightly lower but must still appear every week with direct work, not only as afterthoughts from compounds. Use focusAreas to nudge within this band, not to create 2× volume in one muscle and starvation in another.
   Beginners: favour lower set counts (3 sets) and longer rest (upper ends of rest ranges).
 
 REST DAYS:
@@ -270,8 +275,8 @@ ${JSON.stringify(compact)}
 </exercises>
 
 Build a calendar plan starting ${todayDateKey} with exactly ${MIN_PLAN_DAYS} consecutive days in "schedule" (see <schedule_length> in system instructions — array length must be ${MIN_PLAN_DAYS}).
-Choose the training split that best serves this athlete's goals, schedule, and focusAreas — refer to SPLIT DESIGN in the system instructions.
-Apply the FOCUS AREAS rules from the system instructions: focusAreas = [${(user.focusAreas || []).map((f) => `"${f}"`).join(", ") || '"none"'}]. Think like a real personal trainer — consider muscle size, recovery capacity, indirect stimulus from compounds, and antagonist balance before deciding how much direct isolation volume to add.
+First satisfy BALANCED PHYSIQUE and SPLIT DESIGN in the system instructions (every major muscle region trained each week). Then, if focusAreas = [${(user.focusAreas || []).map((f) => `"${f}"`).join(", ") || '"none"'}], apply FOCUS AREAS as a small accent only — never replace or starve other body parts.
+Choose the split from workoutDays + goals; use focusAreas only for minor volume or cue tweaks after the balanced baseline is met.
 Cycle the split across all 3 weeks with progressive overload as instructed.
 Select exercises that match workoutEnvironment="${user.workoutEnvironment}" and fitnessLevel="${user.fitnessLevel}".
 FINAL CHECK: "schedule" must contain exactly ${MIN_PLAN_DAYS} objects, one per calendar day from ${todayDateKey} onward without skipping or duplicating dates.`;

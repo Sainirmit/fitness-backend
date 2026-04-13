@@ -10,6 +10,7 @@ const REDIS_URL = process.env.REDIS_URL || "redis://127.0.0.1:6379";
 export function createBullMQConnection() {
   return new Redis(REDIS_URL, {
     maxRetriesPerRequest: null,
-    enableOfflineQueue: false,
+    // Avoid "Stream isn't writeable" spam when Redis reconnects during long jobs
+    enableOfflineQueue: true,
   });
 }

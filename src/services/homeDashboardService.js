@@ -125,18 +125,16 @@ async function loadReplacementMap(userId, planId) {
   return map;
 }
 
-async function setsCompletedPercent(occ) {
-  if (occ.status !== 'completed') return null;
-
-  const session = await WorkoutSession.findOne({
-    workoutDayOccurrence: occ._id,
-    status: 'completed',
-  }).select('_id');
-  if (!session) return null;
-
+/**
+ * @param {import('mongoose').Types.ObjectId|string} sessionId
+ * @returns {Promise<number|null>}
+ */
+async function setsCompletedPercentFromSessionId(sessionId) {
   const sessionExercises = await WorkoutSessionExercise.find({
-    workoutSession: session._id,
-  }).select('_id workoutDayExercise');
+    workoutSession: sessionId,
+  })
+    .select('_id workoutDayExercise')
+    .lean();
   if (!sessionExercises.length) return null;
 
   const daeIds = sessionExercises.map((se) => se.workoutDayExercise).filter(Boolean);
@@ -151,6 +149,42 @@ async function setsCompletedPercent(occ) {
   });
 
   return Math.round((totalLogged / totalPrescribed) * 100);
+}
+
+async function setsCompletedPercent(occ) {
+  if (occ.status !== 'completed') return null;
+
+  const session = await WorkoutSession.findOne({
+    workoutDayOccurrence: occ._id,
+    status: 'completed',
+  })
+    .select('_id')
+    .lean();
+  if (!session) return null;
+
+  return setsCompletedPercentFromSessionId(session._id);
+}
+
+/**
+ * Calendar plans: completed session is keyed by workoutDay (calendar slot) + scheduledDateKey.
+ *
+ * @param {import('mongoose').Types.ObjectId|string} userId
+ * @param {{ _id: unknown, scheduledDateKey?: string, status?: string }} day
+ */
+async function setsCompletedPercentForCalendarDay(userId, day) {
+  if (!day || day.status !== 'completed' || !day.scheduledDateKey) return null;
+
+  const session = await WorkoutSession.findOne({
+    user: userId,
+    workoutDay: day._id,
+    scheduledDateKey: day.scheduledDateKey,
+    status: 'completed',
+  })
+    .select('_id')
+    .lean();
+  if (!session) return null;
+
+  return setsCompletedPercentFromSessionId(session._id);
 }
 
 async function computeStreak(userId, todayKey) {
@@ -257,34 +291,41 @@ async function buildCalendarDashboard(userId, dateKey, timeZone, plan) {
   for (const d of allDays) allDaysById[String(d._id)] = d;
   const effectiveDayId = (dayId) => replacementMap[String(dayId)] || String(dayId);
 
-  const weekSchedule = weekKeys.map((key) => {
-    const day = dayByDate[key] ?? null;
+  const weekSchedule = await Promise.all(
+    weekKeys.map(async (key) => {
+      const day = dayByDate[key] ?? null;
 
-    if (!day || day.isRestDay) {
+      if (!day || day.isRestDay) {
+        return {
+          dateKey: key,
+          dayLabel: dayLabel(key),
+          cardState: computeCardState(key, dateKey, null),
+          isRestDay: true,
+          workoutDay: day,
+          effectiveWorkoutDay: day,
+          setsCompletedPercent: null,
+        };
+      }
+
+      const effId = effectiveDayId(String(day._id));
+      const effectiveDay = allDaysById[effId] || day;
+
+      let setsPct = null;
+      if (day.status === 'completed') {
+        setsPct = await setsCompletedPercentForCalendarDay(userId, day);
+      }
+
       return {
         dateKey: key,
         dayLabel: dayLabel(key),
-        cardState: computeCardState(key, dateKey, null),
-        isRestDay: true,
+        cardState: computeCardState(key, dateKey, day.status),
+        isRestDay: false,
         workoutDay: day,
-        effectiveWorkoutDay: day,
-        setsCompletedPercent: null,
+        effectiveWorkoutDay: effectiveDay,
+        setsCompletedPercent: setsPct,
       };
-    }
-
-    const effId = effectiveDayId(String(day._id));
-    const effectiveDay = allDaysById[effId] || day;
-
-    return {
-      dateKey: key,
-      dayLabel: dayLabel(key),
-      cardState: computeCardState(key, dateKey, day.status),
-      isRestDay: false,
-      workoutDay: day,
-      effectiveWorkoutDay: effectiveDay,
-      setsCompletedPercent: null,
-    };
-  });
+    }),
+  );
 
   const streak = await computeCalendarStreak(userId, plan._id, dateKey);
   const nutrition = await todayNutrition(userId, dateKey);
@@ -483,12 +524,15 @@ export async function buildReplacementSheetOptions(userId, todayDateKey) {
   const todayEffectiveName = todayIsRestDay ? null : todayDay.name;
 
   const options = uniqueDays.map((day) => {
+    const isTodaysScheduled = !todayIsRestDay && day.name === todayEffectiveName;
+    // Cooldown: same split name as yesterday's completed effective workout — including
+    // when that split is also today's calendar workout (picker shows disabled / "Yesterday" UX).
     const disabled = blockedName != null && day.name === blockedName;
     return {
       ...day,
       disabled,
       disabledReason: disabled ? 'completed_yesterday' : null,
-      isScheduledToday: !todayIsRestDay && day.name === todayEffectiveName,
+      isScheduledToday: isTodaysScheduled,
     };
   });
 

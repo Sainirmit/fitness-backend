@@ -5,6 +5,7 @@ import {
   startCalendarWorkoutSession,
   completeCalendarWorkoutSession,
   markMissedCalendarDaysForUser,
+  updateCompletedSessionFeedback,
 } from "../services/workoutOccurrenceService.js";
 import {
   upsertSetLog,
@@ -16,7 +17,10 @@ import WorkoutDay from "../models/WorkoutDay.js";
 import WorkoutPlan from "../models/WorkoutPlan.js";
 import WorkoutSessionExercise from "../models/WorkoutSessionExercise.js";
 import WorkoutSetLog from "../models/WorkoutSetLog.js";
-import { resolveTimeZone, syncUserTimeZoneFromHeader } from "../utils/timezone.js";
+import {
+  resolveTimeZone,
+  syncUserTimeZoneFromHeader,
+} from "../utils/timezone.js";
 
 /**
  * POST /api/workout-sessions/start
@@ -49,7 +53,10 @@ export const start = async (req, res, next) => {
 
     const status = result.resumed ? 200 : 201;
     const response = { ...result };
-    if (response?.workoutSession && response.workoutSession.workoutDayOccurrence == null) {
+    if (
+      response?.workoutSession &&
+      response.workoutSession.workoutDayOccurrence == null
+    ) {
       const sessionObj = response.workoutSession.toObject
         ? response.workoutSession.toObject()
         : response.workoutSession;
@@ -67,7 +74,8 @@ export const start = async (req, res, next) => {
 
 /**
  * POST /api/workout-sessions/:sessionId/complete
- * Optional body: { totalDurationMinutes, strenuousnessRating, energyLevelRating }
+ * Optional body: feedback fields (see PATCH .../feedback). Omit feedback here if
+ * the app collects it on a follow-up screen; use PATCH after completion.
  *
  * Completion guard: computes final progress and returns it alongside the
  * completed session. Currently relaxed (always allows completion); set
@@ -79,23 +87,60 @@ export const complete = async (req, res, next) => {
   try {
     const progress = await computeSessionProgress(req.params.sessionId);
 
-    if (MIN_COMPLETION_PERCENT > 0 && progress.percent < MIN_COMPLETION_PERCENT) {
+    if (
+      MIN_COMPLETION_PERCENT > 0 &&
+      progress.percent < MIN_COMPLETION_PERCENT
+    ) {
       return res.status(422).json({
         message: `Complete at least ${MIN_COMPLETION_PERCENT}% of prescribed sets before finishing.`,
         progress,
       });
     }
 
-    const isCalendar = await isCalendarSession(req.params.sessionId, req.user._id);
+    const isCalendar = await isCalendarSession(
+      req.params.sessionId,
+      req.user._id,
+    );
 
     const session = isCalendar
-      ? await completeCalendarWorkoutSession(req.user._id, req.params.sessionId, req.body)
-      : await completeWorkoutSession(req.user._id, req.params.sessionId, req.body);
+      ? await completeCalendarWorkoutSession(
+          req.user._id,
+          req.params.sessionId,
+          req.body,
+        )
+      : await completeWorkoutSession(
+          req.user._id,
+          req.params.sessionId,
+          req.body,
+        );
 
     return res.status(200).json({
       message: "Workout completed.",
       workoutSession: session,
       progress,
+    });
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ message: err.message });
+    }
+    next(err);
+  }
+};
+
+/**
+ * PATCH /api/workout-sessions/:sessionId/feedback
+ * Body: partial feedback (duration, strenuousness, energy). Session must be completed.
+ */
+export const patchFeedback = async (req, res, next) => {
+  try {
+    const workoutSession = await updateCompletedSessionFeedback(
+      req.user._id,
+      req.params.sessionId,
+      req.body,
+    );
+    return res.status(200).json({
+      message: "Feedback saved.",
+      workoutSession,
     });
   } catch (err) {
     if (err.status) {
@@ -147,10 +192,17 @@ export const upsertSet = async (req, res, next) => {
     const { sessionExerciseId, setNumber } = req.params;
     const num = Number(setNumber);
     if (!Number.isInteger(num) || num < 1) {
-      return res.status(400).json({ message: "setNumber must be a positive integer." });
+      return res
+        .status(400)
+        .json({ message: "setNumber must be a positive integer." });
     }
 
-    const log = await upsertSetLog(req.user._id, sessionExerciseId, num, req.body);
+    const log = await upsertSetLog(
+      req.user._id,
+      sessionExerciseId,
+      num,
+      req.body,
+    );
     const progress = await computeSessionProgress(req.params.sessionId);
 
     return res.status(200).json({ setLog: log, progress });
@@ -170,10 +222,16 @@ export const batchUpsertSets = async (req, res, next) => {
   try {
     const { sets } = req.body || {};
     if (!Array.isArray(sets) || sets.length === 0) {
-      return res.status(400).json({ message: "sets (non-empty array) is required." });
+      return res
+        .status(400)
+        .json({ message: "sets (non-empty array) is required." });
     }
 
-    const logs = await batchUpsertSetLogs(req.user._id, req.params.sessionId, sets);
+    const logs = await batchUpsertSetLogs(
+      req.user._id,
+      req.params.sessionId,
+      sets,
+    );
     const progress = await computeSessionProgress(req.params.sessionId);
 
     return res.status(200).json({ setLogs: logs, progress });
@@ -191,7 +249,8 @@ export const batchUpsertSets = async (req, res, next) => {
  */
 export const getProgress = async (req, res, next) => {
   try {
-    const { default: WorkoutSession } = await import("../models/WorkoutSession.js");
+    const { default: WorkoutSession } =
+      await import("../models/WorkoutSession.js");
     const session = await WorkoutSession.findOne({
       _id: req.params.sessionId,
       user: req.user._id,
@@ -208,16 +267,24 @@ export const getProgress = async (req, res, next) => {
 };
 
 async function isCalendarWorkoutDay(workoutDayId) {
-  const day = await WorkoutDay.findById(workoutDayId).select('workoutPlan scheduledDateKey');
+  const day = await WorkoutDay.findById(workoutDayId).select(
+    "workoutPlan scheduledDateKey",
+  );
   if (!day) return false;
-  const plan = await WorkoutPlan.findById(day.workoutPlan).select('planShape');
-  return plan?.planShape === 'calendar';
+  const plan = await WorkoutPlan.findById(day.workoutPlan).select("planShape");
+  return plan?.planShape === "calendar";
 }
 
 async function isCalendarSession(sessionId, userId) {
-  const { default: WorkoutSession } = await import('../models/WorkoutSession.js');
-  const session = await WorkoutSession.findOne({ _id: sessionId, user: userId }).select('workoutPlan');
+  const { default: WorkoutSession } =
+    await import("../models/WorkoutSession.js");
+  const session = await WorkoutSession.findOne({
+    _id: sessionId,
+    user: userId,
+  }).select("workoutPlan");
   if (!session) return false;
-  const plan = await WorkoutPlan.findById(session.workoutPlan).select('planShape');
-  return plan?.planShape === 'calendar';
+  const plan = await WorkoutPlan.findById(session.workoutPlan).select(
+    "planShape",
+  );
+  return plan?.planShape === "calendar";
 }

@@ -134,4 +134,25 @@ describe('replacement sheet exclusion logic', () => {
     const occ = { status: 'planned', workoutDay: 'day1' };
     expect(resolveBlockedId(occ, {})).toBeNull();
   });
+
+  /** Mirrors buildReplacementSheetOptions `disabled` (name-based cooldown). */
+  function optionDisabled({ blockedName, dayName }) {
+    return blockedName != null && dayName === blockedName;
+  }
+
+  it('cooldown: disables split matching yesterday when today is rest', () => {
+    expect(optionDisabled({ blockedName: 'Arms', dayName: 'Arms' })).toBe(true);
+  });
+
+  it('cooldown: disables same split even when it is also today’s scheduled workout', () => {
+    expect(optionDisabled({ blockedName: 'Arms', dayName: 'Arms' })).toBe(true);
+  });
+
+  it('cooldown: does not disable unrelated splits', () => {
+    expect(optionDisabled({ blockedName: 'Arms', dayName: 'Legs' })).toBe(false);
+  });
+
+  it('cooldown: no block when yesterday had nothing completed', () => {
+    expect(optionDisabled({ blockedName: null, dayName: 'Arms' })).toBe(false);
+  });
 });

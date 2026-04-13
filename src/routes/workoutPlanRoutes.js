@@ -18,7 +18,7 @@ router.use(protect);
 
 router.post('/generate', aiGenerationLimiter, generate);
 router.get(
-  '/generation-status/:planId',
+  '/generation-status',
   noHttpCache,
   pollingLimiter,
   getGenerationStatus,

@@ -14,7 +14,17 @@ async function processRefinement(job) {
     attempt: job.attemptsMade + 1,
   });
 
-  await runPhotoRefinement(userId, bodyPhotosId);
+  const result = await runPhotoRefinement(userId, bodyPhotosId);
+
+  if (result?.skipped) {
+    console.log("[Refinement:Worker] skipped (duplicate or in-flight)", {
+      jobId: job.id,
+      userId,
+      bodyPhotosId,
+      analysisStatus: result.analysisStatus,
+    });
+    return;
+  }
 
   console.log("[Refinement:Worker] completed", {
     jobId: job.id,

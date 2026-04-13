@@ -70,7 +70,7 @@ function buildAutoOccurrenceSlots(days, workoutDays, timeZone) {
  *
  * Queues an AI workout plan generation for the authenticated user.
  * Returns immediately with a placeholder plan (status "generating").
- * Client polls GET /api/workout-plans/generation-status/:planId until complete.
+ * Client polls GET /api/workout-plans/generation-status until complete.
  */
 export const generate = async (req, res, next) => {
   try {
@@ -105,6 +105,37 @@ export const generate = async (req, res, next) => {
       generatedAt: { $lt: staleCutoff },
     });
 
+    const jobId = `workout-gen-${user._id}`;
+    let existingJob;
+    try {
+      existingJob = await workoutGenQueue.getJob(jobId);
+    } catch {
+      return res.status(503).json({
+        code: "QUEUE_UNAVAILABLE",
+        message: "Generation queue is temporarily unavailable.",
+        retryable: true,
+      });
+    }
+
+    if (existingJob) {
+      const queueState = await existingJob.getState();
+      if (queueState === "active") {
+        return res.status(409).json({
+          message:
+            "Plan generation is already in progress. Wait for it to finish, then try again.",
+        });
+      }
+      try {
+        await existingJob.remove();
+      } catch (removeErr) {
+        console.warn("[workout-plans/generate] could not remove prior job", {
+          jobId,
+          queueState,
+          message: removeErr?.message,
+        });
+      }
+    }
+
     await WorkoutPlan.updateMany(
       { user: user._id, status: "active" },
       { $set: { status: "archived" } },
@@ -121,7 +152,6 @@ export const generate = async (req, res, next) => {
       generatedAt: new Date(),
     });
 
-    const jobId = `workout-gen:${user._id}`;
     await workoutGenQueue.add(
       "calendar",
       {
@@ -144,51 +174,80 @@ export const generate = async (req, res, next) => {
 };
 
 /**
- * GET /api/workout-plans/generation-status/:planId
- * Lightweight polling endpoint.
+ * GET /api/workout-plans/generation-status
+ *
+ * Status from BullMQ only (job id `workout-gen-<userId>`, same as POST /generate).
+ * No job in Redis → `idle` (or job already pruned) — use GET /api/workout-plans/current.
  */
 export const getGenerationStatus = async (req, res, next) => {
   try {
-    const { planId } = req.params;
+    const jobKey = `workout-gen-${req.user._id}`;
 
-    // First check if the placeholder still exists
-    const placeholder = await WorkoutPlan.findOne({
-      _id: planId,
-      user: req.user._id,
-    })
-      .select("status generationError")
-      .lean();
-
-    if (placeholder && placeholder.status === "generating") {
-      return res.status(200).json({ status: "generating" });
+    let job;
+    try {
+      job = await workoutGenQueue.getJob(jobKey);
+    } catch {
+      return res.status(503).json({
+        code: "QUEUE_UNAVAILABLE",
+        message: "Generation queue is temporarily unavailable.",
+        retryable: true,
+      });
     }
 
-    if (placeholder && placeholder.status === "failed") {
+    if (!job) {
+      return res.status(200).json({ status: "idle" });
+    }
+
+    const queueState = await job.getState();
+
+    if (queueState === "completed") {
+      const rv = job.returnvalue;
+      const workoutPlanId =
+        rv && typeof rv === "object" && rv.workoutPlanId != null
+          ? String(rv.workoutPlanId)
+          : null;
+
+      // Stale Redis job: jobId is reused per user; a previous "completed" job
+      // can remain in Redis while Mongo already has a new generating placeholder.
+      const generating = await WorkoutPlan.findOne({
+        user: req.user._id,
+        status: "generating",
+      })
+        .select("_id")
+        .lean();
+
+      if (generating) {
+        const jobPlaceholder = job.data?.placeholderPlanId;
+        const matchesCurrentPlaceholder =
+          jobPlaceholder &&
+          String(jobPlaceholder) === String(generating._id);
+        if (!matchesCurrentPlaceholder || !workoutPlanId) {
+          return res.status(200).json({
+            status: "generating",
+            queueState: "stale_completed",
+          });
+        }
+      }
+
+      return res.status(200).json({
+        status: "completed",
+        ...(workoutPlanId ? { workoutPlanId } : {}),
+      });
+    }
+
+    if (queueState === "failed") {
       return res.status(200).json({
         status: "failed",
         code: "GENERATION_FAILED",
-        error: placeholder.generationError || "Plan generation failed.",
+        error:
+          job.failedReason || "Plan generation failed. Please try again later.",
       });
     }
 
-    // Placeholder was deleted → the real plan is active now
-    const activePlan = await WorkoutPlan.findOne({
-      user: req.user._id,
-      status: "active",
-      planShape: "calendar",
-    })
-      .sort({ generatedAt: -1 })
-      .select("_id name status planShape generatedAt")
-      .lean();
-
-    if (activePlan) {
-      return res.status(200).json({
-        status: "completed",
-        workoutPlanId: activePlan._id,
-      });
-    }
-
-    return res.status(404).json({ message: "Plan not found." });
+    return res.status(200).json({
+      status: "generating",
+      queueState,
+    });
   } catch (err) {
     next(err);
   }
