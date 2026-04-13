@@ -10,6 +10,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "seed:exercises": "node src/scripts/seedExercises.js",
+    "upload:exercise-media": "node src/scripts/uploadExerciseMediaToS3.js",
     "seed:rules": "node src/scripts/seedTrainerRules.js",
     "test": "vitest run",
     "test:watch": "vitest"

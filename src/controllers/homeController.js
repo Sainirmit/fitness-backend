@@ -6,7 +6,10 @@ import {
   deleteReplacement,
 } from "../services/homeDashboardService.js";
 import { isValidDateKey } from "../services/workoutOccurrenceService.js";
-import { resolveTimeZone, syncUserTimeZoneFromHeader } from "../utils/timezone.js";
+import {
+  resolveTimeZone,
+  syncUserTimeZoneFromHeader,
+} from "../utils/timezone.js";
 
 /**
  * GET /api/home/dashboard?dateKey=YYYY-MM-DD&timeZone=America/New_York
