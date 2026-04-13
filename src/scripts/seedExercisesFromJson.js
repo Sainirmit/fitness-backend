@@ -41,6 +41,7 @@ function coerceExerciseType(raw) {
 function normalizeJsonExercise(ex) {
   const name = String(ex?.name ?? "").trim();
   if (!name) return null;
+  const lowerName = name.toLowerCase();
 
   // JSON files include `videoUrl` but it can be empty. Fall back to CDN URL format.
   const videoUrl =
@@ -52,7 +53,12 @@ function normalizeJsonExercise(ex) {
     description: String(ex?.description ?? "").trim() || "",
     videoUrl,
     thumbnailUrl: String(ex?.thumbnailUrl ?? "").trim() || "",
-    exerciseType: coerceExerciseType(ex?.exerciseType),
+    // Some conditioning movements are tracked as reps in app UX.
+    // Keep them as bodyweight so backend accepts reps-only logging.
+    exerciseType:
+      lowerName === "jump rope"
+        ? "bodyweight"
+        : coerceExerciseType(ex?.exerciseType),
     muscleGroups: Array.isArray(ex?.muscleGroups) ? ex.muscleGroups : [],
     equipment: Array.isArray(ex?.equipment) ? ex.equipment : [],
     difficultyLevel: String(ex?.difficultyLevel ?? "").trim().toLowerCase() || "beginner",

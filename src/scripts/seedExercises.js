@@ -106,11 +106,14 @@ async function seedCatalog(catalogKey, filePath) {
 
   for (const ex of parsed) {
     const filter = { name: ex.name, catalogKey };
+    const lowerName = String(ex.name || "").trim().toLowerCase();
     const doc = {
       name: ex.name,
       description: ex.description || "",
       videoUrl: `https://cdn.mytrainrai.com/videos/${catalogKey}/${encodeURIComponent(ex.name)}.mp4`,
-      exerciseType: ex.exerciseType || "strength",
+      // Jump Rope is tracked as reps-only in the app.
+      exerciseType:
+        lowerName === "jump rope" ? "bodyweight" : ex.exerciseType || "strength",
       muscleGroups: ex.muscleGroups || [],
       equipment: ex.equipment || [],
       difficultyLevel: ex.difficultyLevel || "beginner",

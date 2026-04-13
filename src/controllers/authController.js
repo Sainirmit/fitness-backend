@@ -4,6 +4,8 @@ import User from '../models/User.js';
 
 const normalizeEmail = (email) =>
   typeof email === 'string' ? email.trim().toLowerCase() : '';
+const isAppleRelayEmail = (email) =>
+  typeof email === 'string' && /@privaterelay\.appleid\.com$/i.test(email.trim());
 
 const safeDecodeJwtClaims = (token) => {
   try {
@@ -29,14 +31,16 @@ async function findOrCreateSocialUser({
   const normalizedEmail = normalizeEmail(email);
   let isNewUser = false;
 
-  // 1) Prefer providerId match to avoid duplicate accounts when email formatting changes.
-  let user = await User.findOne({ providerId: uid, provider: getProviderRegex(provider) });
+  // 1) Prefer Firebase UID match first.
+  // If Google and Apple are linked to one Firebase user, this keeps one backend account
+  // even if Apple returns a private relay email.
+  let user = await User.findOne({ providerId: uid });
 
-  // 2) Fallback to normalized email + provider (case-insensitive provider for legacy rows).
+  // 2) Fallback to normalized email (provider-agnostic) to avoid duplicate rows when
+  // the same real email signs in through different providers.
   if (!user) {
     user = await User.findOne({
       email: normalizedEmail,
-      provider: getProviderRegex(provider),
     });
   }
 
@@ -53,15 +57,24 @@ async function findOrCreateSocialUser({
 
   // Keep auth identity fields normalized and linked for future sign-ins.
   let shouldSave = false;
-  if (user.provider !== provider) {
+  if (!user.provider || !getProviderRegex(provider).test(user.provider)) {
+    // Preserve compatibility with existing single-provider field by recording
+    // the most recent provider used for login.
     user.provider = provider;
     shouldSave = true;
   }
   if (user.providerId !== uid) {
+    // If this login comes from a different Firebase user ID for the same person,
+    // keep providerId in sync with the latest verified identity.
     user.providerId = uid;
     shouldSave = true;
   }
-  if (user.email !== normalizedEmail) {
+  if (
+    user.email !== normalizedEmail
+    && normalizedEmail
+    // Never replace a real email with Apple private relay.
+    && (!isAppleRelayEmail(normalizedEmail) || isAppleRelayEmail(user.email))
+  ) {
     user.email = normalizedEmail;
     shouldSave = true;
   }
