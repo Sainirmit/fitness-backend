@@ -38,7 +38,16 @@ if (process.env.TRUST_PROXY) {
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+// Browsers cannot use `Access-Control-Allow-Origin: *` when the request sends
+// credentials (`fetch(..., { credentials: 'include' })` or axios `withCredentials`).
+// Local dev often avoids CORS via a dev-server proxy; production uses a real origin
+// and needs a reflected Allow-Origin + credentials: true.
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  }),
+);
 app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
