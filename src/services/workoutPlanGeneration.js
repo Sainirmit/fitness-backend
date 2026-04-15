@@ -173,7 +173,12 @@ The athlete is building an aesthetic, proportional physique. Every training week
 - Choose splits (e.g. Push/Pull/Legs, Upper/Lower, or bro-split variants) that naturally hit every region each week given workoutDays. If training frequency is low (e.g. 2–3 days/week), use full-body or upper/lower so every major pattern appears every week.
 
 SPLIT DESIGN
-Design the split from workoutDays count + fitnessGoals first, with full-body balance as the hard constraint above. Good options include Push/Pull/Legs, Chest+Triceps / Back+Biceps / Shoulders / Legs, Upper/Lower, and Full Body — pick the one that hits every region weekly without redundancy chaos. focusAreas must NOT determine the split; they only tweak volume emphasis inside an already balanced week.
+Design the split from workoutDays count + fitnessGoals first, with full-body balance as the hard constraint above. Good options by frequency:
+  • 2–3 days/week → Full Body or Upper/Lower so every region appears each week.
+  • 4 days/week → Upper/Lower or Push/Pull.
+  • 5–6 days/week → Push/Pull/Legs or body-part split (e.g. Chest+Tri / Back+Bi / Shoulders / Legs); every region still appears at least once per week.
+  • 7 days/week → body-part split with two active-recovery days; all regions covered weekly.
+focusAreas must NOT determine the split; they only tweak volume emphasis inside an already balanced week.
 Repeat the same split structure across all 3 weeks. Do not randomly reorder days.
 
 FOCUS AREAS — accent only (after balanced baseline is satisfied)
@@ -200,14 +205,23 @@ EXERCISE ORDERING:
   5. Cooldown (optional)
 
 VOLUME:
-  5-8 exercises per non-rest day.
-  Weekly sets per muscle group: target roughly similar totals across major regions (chest, back, legs, shoulders) so no one line looks neglected — typically ~10–18 hard sets per week per large region for hypertrophy, adjusted for workoutDays. Arms and calves often land slightly lower but must still appear every week with direct work, not only as afterthoughts from compounds. Use focusAreas to nudge within this band, not to create 2× volume in one muscle and starvation in another.
+  Exercises per session: see VOLUME SCALING BY TRAINING FREQUENCY below for frequency-specific caps. For 4 days/week or fewer, 5–8 exercises per session is standard.
+  Weekly sets per muscle group: target roughly similar totals across major regions (chest, back, legs, shoulders) so no one line looks neglected — typically ~10–18 hard sets per week per large region for hypertrophy, adjusted for workoutDays. When training frequency is high (5–7 days), weekly totals stay in this band but are spread across more, shorter sessions. Arms and calves often land slightly lower but must still appear every week with direct work, not only as afterthoughts from compounds. Use focusAreas to nudge within this band, not to create 2× volume in one muscle and starvation in another.
   Beginners: favour lower set counts (3 sets) and longer rest (upper ends of rest ranges).
 
-REST DAYS:
-  isRestDay=true, exercises=[], estimatedDurationMinutes=null, proTip="".
+REST DAYS — strict classification (non-negotiable):
+  • Every calendar day whose weekday matches a day listed in trainingDays MUST have isRestDay=false with at least one exercise. You may NEVER turn a selected training day into a rest day.
+  • Every calendar day whose weekday is NOT listed in trainingDays MUST have isRestDay=true with exercises=[].
+  • The user's trainingDays is the sole authority on which days are workout days. Do not add extra rest days for "recovery" beyond what the user's schedule already implies.
+  Rest day format: isRestDay=true, exercises=[], estimatedDurationMinutes=null, proTip="", name="Rest Day".
   The full schedule is always exactly ${MIN_PLAN_DAYS} consecutive days from the given start date — see <schedule_length>.
-  Non-training days (per workoutDays) are always rest days.
+
+VOLUME SCALING BY TRAINING FREQUENCY — adjust per-session volume so weekly totals stay appropriate for recovery and the user's fitnessGoals:
+  • 4 days/week : 5–8 exercises/session, 3–4 sets each — standard baseline.
+  • 5 days/week : 4–6 exercises/session, 3 sets each; shorten rest to 60–90 s.
+  • 6 days/week : 3–5 exercises/session, 3 sets each; sessions 45–60 min; one session per week may be active recovery (light cardio or mobility, no heavy compounds).
+  • 7 days/week : 3–4 exercises/session, 2–3 sets each; two sessions per week should be active recovery.
+  Never exceed the per-session caps above when frequency is high. Per-session intensity cues and rep ranges must still reflect fitnessGoals (hypertrophy, fat loss, endurance, etc.).
 </programming_rules>`;
 
 function buildSystemPrompt(rulesContent) {
@@ -229,6 +243,8 @@ function compactExerciseList(exercises) {
   }));
 }
 
+const ALL_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
 function buildUserPrompt(
   user,
   bodyDetails,
@@ -237,6 +253,9 @@ function buildUserPrompt(
   timeZone,
   cardioBudget,
 ) {
+  const trainingDaySet = new Set((user.workoutDays || []).map((d) => d.toLowerCase()));
+  const restDays = ALL_WEEKDAYS.filter((d) => !trainingDaySet.has(d));
+
   const profile = {
     fitnessGoals: user.fitnessGoals,
     fitnessLevel: user.fitnessLevel,
@@ -262,6 +281,9 @@ timezone: ${timeZone}
 totalDays: ${MIN_PLAN_DAYS}
 trainingDaysPerWeek: ${user.workoutDays.length}
 trainingDays: ${user.workoutDays.join(", ")}
+restDays: ${restDays.length > 0 ? restDays.join(", ") : "none — all 7 days are training days"}
+
+CRITICAL: Every day whose weekday appears in trainingDays above MUST be a workout day (isRestDay=false with exercises). Only the days in restDays above may have isRestDay=true. Do NOT add extra rest days for recovery — adjust per-session volume instead (see VOLUME SCALING BY TRAINING FREQUENCY in system instructions).
 </calendar>
 
 <cardio_budget>
@@ -279,7 +301,7 @@ First satisfy BALANCED PHYSIQUE and SPLIT DESIGN in the system instructions (eve
 Choose the split from workoutDays + goals; use focusAreas only for minor volume or cue tweaks after the balanced baseline is met.
 Cycle the split across all 3 weeks with progressive overload as instructed.
 Select exercises that match workoutEnvironment="${user.workoutEnvironment}" and fitnessLevel="${user.fitnessLevel}".
-FINAL CHECK: "schedule" must contain exactly ${MIN_PLAN_DAYS} objects, one per calendar day from ${todayDateKey} onward without skipping or duplicating dates.`;
+FINAL CHECK: "schedule" must contain exactly ${MIN_PLAN_DAYS} objects, one per calendar day from ${todayDateKey} onward without skipping or duplicating dates. Verify that every trainingDay (${user.workoutDays.join(", ")}) maps to a workout day and every restDay (${restDays.length > 0 ? restDays.join(", ") : "none"}) maps to a rest day.`;
 }
 
 function buildPhotoRefinementSection(photoProfile) {
